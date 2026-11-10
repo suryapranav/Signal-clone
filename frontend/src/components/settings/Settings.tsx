@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Bell, ChevronRight, Keyboard, Laptop, Lock, LogOut, MessageSquare, Monitor, Moon, Palette, Sun } from "lucide-react";
+import { ArrowLeft, AtSign, Bell, ChevronRight, Keyboard, LockKeyhole, LogOut, Monitor, Moon, Pencil, Phone, Sun, UserRound } from "lucide-react";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { api, ApiError } from "@/lib/api";
 import { formatPhone } from "@/lib/format";
@@ -13,14 +13,15 @@ import { toast, useUI, type SettingsSection, type Theme } from "@/store/ui";
 import { PaneHeader } from "../shell/Placeholders";
 import { Avatar } from "../ui/Avatar";
 import { SwitchRow } from "../ui/Switch";
+import { AppearanceIcon, ChatBubbleIcon, LinkedDevicesIcon } from "../ui/icons";
 import { AvatarPicker } from "./AvatarPicker";
 
 const SECTIONS: { id: SettingsSection; label: string; icon: ReactNode }[] = [
-  { id: "appearance", label: "Appearance", icon: <Palette size={20} /> },
-  { id: "chats", label: "Chats", icon: <MessageSquare size={20} /> },
-  { id: "notifications", label: "Notifications", icon: <Bell size={20} /> },
-  { id: "privacy", label: "Privacy", icon: <Lock size={20} /> },
-  { id: "devices", label: "Linked devices", icon: <Laptop size={20} /> },
+  { id: "appearance", label: "Appearance", icon: <AppearanceIcon size={22} /> },
+  { id: "chats", label: "Chats", icon: <ChatBubbleIcon size={22} /> },
+  { id: "notifications", label: "Notifications", icon: <Bell size={22} strokeWidth={1.75} /> },
+  { id: "privacy", label: "Privacy", icon: <LockKeyhole size={22} strokeWidth={1.75} /> },
+  { id: "devices", label: "Linked devices", icon: <LinkedDevicesIcon size={22} /> },
 ];
 
 export function SettingsNav() {
@@ -36,7 +37,7 @@ export function SettingsNav() {
       onClick={() => setSection(id)}
       className={cx("row mx-2 w-[calc(100%-1rem)] rounded-xl py-2.5", active === id && "md:bg-selected")}
     >
-      <span className="text-ink-2">{icon}</span>
+      <span className="text-ink">{icon}</span>
       <span className="flex-1">{label}</span>
       <ChevronRight size={16} className="text-ink-3 md:hidden" />
     </button>
@@ -59,7 +60,7 @@ export function SettingsNav() {
         {SECTIONS.map((s) => item(s.id, s.label, s.icon))}
         <div className="mx-4 my-2 border-t border-line" />
         <button className="row mx-2 w-[calc(100%-1rem)] rounded-xl py-2.5" onClick={() => openModal({ kind: "shortcuts" })}>
-          <Keyboard size={20} className="text-ink-2" />
+          <Keyboard size={22} strokeWidth={1.75} className="text-ink" />
           <span>Keyboard shortcuts</span>
         </button>
         <button
@@ -75,7 +76,7 @@ export function SettingsNav() {
             })
           }
         >
-          <LogOut size={20} />
+          <LogOut size={22} strokeWidth={1.75} />
           <span>Log out</span>
         </button>
       </div>
@@ -109,6 +110,37 @@ function Group({ title, children }: { title?: string; children: ReactNode }) {
   );
 }
 
+/** One line of Signal's profile card: an icon, then an inline text field. */
+function IconField({
+  icon,
+  label,
+  value,
+  onChange,
+  maxLength,
+  placeholder,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  maxLength: number;
+  placeholder?: string;
+}) {
+  return (
+    <label className="flex items-center gap-3 rounded-xl px-3 transition-colors focus-within:bg-hover">
+      <span className="shrink-0 text-ink">{icon}</span>
+      <input
+        aria-label={label}
+        className="h-11 min-w-0 flex-1 bg-transparent text-body text-ink outline-none placeholder:text-ink-3"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        maxLength={maxLength}
+        placeholder={placeholder ?? label}
+      />
+    </label>
+  );
+}
+
 function ProfilePage() {
   const me = useChat((s) => s.me)!;
   const [name, setName] = useState(me.display_name);
@@ -138,22 +170,40 @@ function ProfilePage() {
     <Page title="Profile">
       <form onSubmit={save} className="space-y-5">
         <AvatarPicker name={name} color={color} photo={photo} onColor={setColor} onPhoto={setPhoto} />
-        <label className="block">
-          <span className="mb-1 block text-body-sm font-semibold text-ink-2">Name</span>
-          <input className="input" value={name} onChange={(e) => setName(e.target.value)} maxLength={64} />
-        </label>
-        <label className="block">
-          <span className="mb-1 block text-body-sm font-semibold text-ink-2">About</span>
-          <input className="input" value={about} onChange={(e) => setAbout(e.target.value)} maxLength={140} placeholder="Write a few words about yourself" />
-        </label>
-        <label className="block">
-          <span className="mb-1 block text-body-sm font-semibold text-ink-2">Username</span>
-          <input className="input" value={username} onChange={(e) => setUsername(e.target.value.toLowerCase())} placeholder="name.42" maxLength={36} />
-          <span className="mt-1 block text-body-sm text-ink-3">People can find you by your username without seeing your phone number.</span>
-        </label>
         <div>
-          <span className="mb-1 block text-body-sm font-semibold text-ink-2">Phone number</span>
-          <p className="text-body text-ink">{formatPhone(me.phone)}</p>
+          <div className="rounded-2xl bg-field px-1 py-1">
+            <IconField icon={<UserRound size={20} strokeWidth={1.75} />} label="Name" value={name} onChange={setName} maxLength={64} />
+            <IconField
+              icon={<Pencil size={20} strokeWidth={1.75} />}
+              label="About"
+              value={about}
+              onChange={setAbout}
+              maxLength={140}
+              placeholder="About"
+            />
+          </div>
+          <p className="mt-2 px-4 text-body-sm text-ink-2">
+            Your profile and changes to it will be visible to people you message, contacts and groups.
+          </p>
+        </div>
+        <div>
+          <div className="rounded-2xl bg-field px-1 py-1">
+            <IconField
+              icon={<AtSign size={20} strokeWidth={1.75} />}
+              label="Username"
+              value={username}
+              onChange={(v) => setUsername(v.toLowerCase())}
+              maxLength={36}
+              placeholder="Username"
+            />
+          </div>
+          <p className="mt-2 px-4 text-body-sm text-ink-2">
+            People can message you using your optional username so you don&apos;t have to give out your phone number.
+          </p>
+        </div>
+        <div className="flex items-center gap-3 rounded-2xl bg-field px-4 py-3">
+          <Phone size={20} strokeWidth={1.75} className="shrink-0 text-ink" />
+          <span className="text-body text-ink">{formatPhone(me.phone)}</span>
         </div>
         <div className="flex justify-end">
           <button className="btn-primary" disabled={!dirty || !name.trim() || busy}>
@@ -251,7 +301,7 @@ function DevicesPage() {
   return (
     <Page title="Linked devices">
       <div className="flex flex-col items-center gap-3 py-12 text-center text-ink-2">
-        <Laptop size={40} strokeWidth={1.5} />
+        <LinkedDevicesIcon size={44} strokeWidth={1.4} />
         <p className="text-body-lg font-medium text-ink">Linked devices are coming soon</p>
         <p className="text-body-sm">Use Signal on your desktop and tablet, synced with your phone.</p>
       </div>

@@ -1,35 +1,11 @@
 "use client";
 
-import { Menu as MenuIcon, Phone, Settings } from "lucide-react";
+import { Menu as MenuIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { cx } from "@/lib/utils";
 import { useChat } from "@/store/chat";
 import { useUI, type Tab } from "@/store/ui";
-
-/** Signal's chat bubble: outlined, or filled when its tab is active. */
-function ChatsIcon({ filled }: { filled: boolean }) {
-  return (
-    <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden>
-      <path
-        d="M12 3.5a8.5 8.5 0 0 0-7.3 12.8L3.6 20.4l4.2-1.1A8.5 8.5 0 1 0 12 3.5Z"
-        fill={filled ? "currentColor" : "none"}
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-/** Signal's Stories icon: a card with another card peeking out behind it. */
-function StoriesIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" aria-hidden>
-      <rect x="9" y="3" width="11" height="18" rx="2.6" />
-      <path d="M6.6 5.6 4.6 6.4a1.2 1.2 0 0 0-.7 1.4l2.8 10.6" strokeLinecap="round" />
-    </svg>
-  );
-}
+import { ChatBubbleIcon, GearIcon, PhoneIcon, StoriesIcon } from "../ui/icons";
 
 function NavButton({
   tab,
@@ -98,11 +74,11 @@ export function NavRail() {
       >
         <MenuIcon size={22} strokeWidth={1.7} />
       </button>
-      <NavButton tab="chats" label="Chats" icon={(a) => <ChatsIcon filled={a} />} badge={unread} expanded={expanded} />
-      <NavButton tab="calls" label="Calls" icon={() => <Phone size={21} strokeWidth={1.7} />} expanded={expanded} />
-      <NavButton tab="stories" label="Stories" icon={() => <StoriesIcon />} expanded={expanded} />
+      <NavButton tab="chats" label="Chats" icon={(a) => <ChatBubbleIcon filled={a} size={22} strokeWidth={1.7} />} badge={unread} expanded={expanded} />
+      <NavButton tab="calls" label="Calls" icon={(a) => <PhoneIcon filled={a} size={21} strokeWidth={1.7} />} expanded={expanded} />
+      <NavButton tab="stories" label="Stories" icon={() => <StoriesIcon size={22} strokeWidth={1.7} />} expanded={expanded} />
       <div className="flex-1" />
-      <NavButton tab="settings" label="Settings" icon={() => <Settings size={22} strokeWidth={1.7} />} expanded={expanded} />
+      <NavButton tab="settings" label="Settings" icon={(a) => <GearIcon filled={a} size={22} strokeWidth={1.7} />} expanded={expanded} />
     </nav>
   );
 }
