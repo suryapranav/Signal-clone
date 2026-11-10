@@ -265,7 +265,7 @@ export const MessageBubble = memo(function MessageBubble({ msg, ctx, isGroup, ca
           {!imageOnly && (
             <div className="flex flex-wrap items-end justify-end gap-x-2">
               {msg.body && (
-                <p className={cx("min-w-0 whitespace-pre-wrap text-left [overflow-wrap:anywhere]", jumbo ? "text-[40px] leading-[48px]" : "text-body")}>
+                <p className={cx("min-w-0 grow whitespace-pre-wrap text-left [overflow-wrap:anywhere]", jumbo ? "text-[40px] leading-[48px]" : "text-body")}>
                   {msg.body}
                 </p>
               )}
