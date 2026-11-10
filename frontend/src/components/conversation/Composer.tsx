@@ -1,15 +1,16 @@
 "use client";
 
-import { Check, FileText, Mic, Paperclip, Pencil, SendHorizontal, Smile, X } from "lucide-react";
+import { Check, FileText, Mic, Pencil, Plus, SendHorizontal, Smile, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent } from "react";
 import { comingSoon } from "@/lib/actions";
 import { formatBytes, prepareFile } from "@/lib/files";
-import { messageSummary, userName, type NameContext } from "@/lib/names";
+import type { NameContext } from "@/lib/names";
 import { getPref, usePref } from "@/lib/prefs";
 import { realtime } from "@/lib/socket";
 import type { Conversation } from "@/lib/types";
 import { useChat } from "@/store/chat";
 import { toast, useUI } from "@/store/ui";
+import { QuotePanel } from "./QuotePanel";
 
 /** Validate a file and stage it in the composer of the given chat. */
 export async function attachFile(convId: number, file: File) {
@@ -204,95 +205,93 @@ export function Composer({ conv, ctx }: { conv: Conversation; ctx: NameContext }
   }
 
   return (
-    <div className="flex shrink-0 items-end gap-1 px-2 pb-3 pt-2 md:px-3">
-      <div className="relative">
-        <button className="icon-btn h-9 w-9" onClick={() => setEmojiOpen((o) => !o)} aria-label="Emoji" title="Emoji">
-          <Smile size={20} strokeWidth={1.75} />
-        </button>
-        {emojiOpen && <EmojiPicker onPick={insertEmoji} onClose={() => setEmojiOpen(false)} />}
-      </div>
-
-      <div className="min-w-0 flex-1 rounded-[18px] bg-field">
-        {editing && (
-          <div className="flex items-start gap-2 px-2 pt-2">
-            <div className="min-w-0 flex-1 rounded-lg border-l-[3px] border-accent bg-chat px-2.5 py-1.5">
-              <div className="flex items-center gap-1.5 text-[13px] font-semibold leading-4">
-                <Pencil size={12} strokeWidth={2} /> Edit message
-              </div>
-              <div className="mt-0.5 line-clamp-2 text-[13px] leading-[18px] text-ink-2">{messageSummary(editing)}</div>
-            </div>
-            <button className="icon-btn h-6 w-6" onClick={() => setEditing(null)} aria-label="Cancel edit">
-              <X size={14} />
-            </button>
-          </div>
-        )}
-        {replyTo && (
-          <div className="flex items-start gap-2 px-2 pt-2">
-            <div className="min-w-0 flex-1 rounded-lg border-l-[3px] border-accent bg-chat px-2.5 py-1.5">
-              <div className="text-[13px] font-semibold leading-4">{replyTo.sender_id === ctx.meId ? "You" : userName(ctx, replyTo.sender_id)}</div>
-              <div className="mt-0.5 line-clamp-2 text-[13px] leading-[18px] text-ink-2">{messageSummary(replyTo)}</div>
-            </div>
-            <button className="icon-btn h-6 w-6" onClick={() => setReplyTo(null)} aria-label="Cancel reply">
-              <X size={14} />
-            </button>
-          </div>
-        )}
-        {pending && !editing && <PendingFile file={pending.file} onRemove={() => setPendingFile(null)} />}
-        <textarea
-          ref={input}
-          rows={1}
-          value={text}
-          onChange={(e) => {
-            setText(e.target.value);
-            if (e.target.value && !editing) typing.ping();
-            else typing.stop();
+    <div className="shrink-0 px-2 pb-3 pt-2 md:px-3">
+      {/* Signal shows the message being replied to (or edited) as a full-width panel above the input row. */}
+      {(editing || replyTo) && (
+        <QuotePanel
+          className="mb-2"
+          quoted={(editing ?? replyTo)!}
+          ctx={ctx}
+          label={
+            editing ? (
+              <span className="flex items-center gap-1.5">
+                <Pencil size={13} strokeWidth={2} /> Edit message
+              </span>
+            ) : undefined
+          }
+          onCancel={{
+            label: editing ? "Cancel edit" : "Cancel reply",
+            onClick: () => (editing ? setEditing(null) : setReplyTo(null)),
           }}
-          onKeyDown={onKeyDown}
-          onPaste={onPaste}
-          onBlur={typing.stop}
-          placeholder={pending ? "Add a message" : "Message"}
-          aria-label="Message"
-          spellCheck={spellCheck}
-          className="block max-h-[140px] w-full resize-none bg-transparent px-3.5 py-2 text-body text-ink outline-none placeholder:text-ink-3"
         />
-      </div>
+      )}
+      <div className="flex items-end gap-1">
+        <div className="relative">
+          <button className="icon-btn h-9 w-9" onClick={() => setEmojiOpen((o) => !o)} aria-label="Emoji" title="Emoji">
+            <Smile size={20} strokeWidth={1.75} />
+          </button>
+          {emojiOpen && <EmojiPicker onPick={insertEmoji} onClose={() => setEmojiOpen(false)} />}
+        </div>
 
-      {!editing && (
-        <button className="icon-btn h-9 w-9" onClick={() => picker.current?.click()} aria-label="Attach file" title="Attach file">
-          <Paperclip size={19} strokeWidth={1.75} />
-        </button>
-      )}
-      <input
-        ref={picker}
-        type="file"
-        hidden
-        aria-label="Choose file"
-        onChange={(e) => {
-          const file = e.target.files?.[0];
-          e.target.value = "";
-          if (file) void attachFile(conv.id, file);
-        }}
-      />
-      {editing ? (
-        <button
-          key="save"
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent text-white hover:bg-accent-hover disabled:opacity-50"
-          onClick={submit}
-          disabled={!canSend}
-          aria-label="Save edit"
-          title="Save edit"
-        >
-          <Check size={18} />
-        </button>
-      ) : canSend ? (
-        <button key="send" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent text-white hover:bg-accent-hover" onClick={submit} aria-label="Send" title="Send (Enter)">
-          <SendHorizontal size={18} />
-        </button>
-      ) : (
-        <button key="mic" className="icon-btn h-9 w-9" onClick={() => comingSoon("Voice messages")} aria-label="Voice message" title="Voice message">
-          <Mic size={19} strokeWidth={1.75} />
-        </button>
-      )}
+        <div className="min-w-0 flex-1 rounded-[18px] bg-bubble-in">
+          {pending && !editing && <PendingFile file={pending.file} onRemove={() => setPendingFile(null)} />}
+          <textarea
+            ref={input}
+            rows={1}
+            value={text}
+            onChange={(e) => {
+              setText(e.target.value);
+              if (e.target.value && !editing) typing.ping();
+              else typing.stop();
+            }}
+            onKeyDown={onKeyDown}
+            onPaste={onPaste}
+            onBlur={typing.stop}
+            placeholder={pending ? "Add a message" : "Message"}
+            aria-label="Message"
+            spellCheck={spellCheck}
+            className="block max-h-[140px] w-full resize-none bg-transparent px-3.5 py-2 text-body text-ink outline-none placeholder:text-ink-3"
+          />
+        </div>
+
+        <input
+          ref={picker}
+          type="file"
+          hidden
+          aria-label="Choose file"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = "";
+            if (file) void attachFile(conv.id, file);
+          }}
+        />
+        {editing ? (
+          <button
+            key="save"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent text-white hover:bg-accent-hover disabled:opacity-50"
+            onClick={submit}
+            disabled={!canSend}
+            aria-label="Save edit"
+            title="Save edit"
+          >
+            <Check size={18} />
+          </button>
+        ) : canSend ? (
+          <button key="send" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent text-white hover:bg-accent-hover" onClick={submit} aria-label="Send" title="Send (Enter)">
+            <SendHorizontal size={18} />
+          </button>
+        ) : (
+          <button key="mic" className="icon-btn h-9 w-9" onClick={() => comingSoon("Voice messages")} aria-label="Voice message" title="Voice message">
+            <Mic size={19} strokeWidth={1.75} />
+          </button>
+        )}
+        {/* Attachments sit at the far right, behind Signal's "+". */}
+        {!editing && (
+          <button className="icon-btn h-9 w-9" onClick={() => picker.current?.click()} aria-label="Attach file" title="Attach file">
+            <Plus size={22} strokeWidth={1.75} />
+          </button>
+        )}
+      </div>
     </div>
   );
 }

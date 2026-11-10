@@ -6,7 +6,7 @@ import { fileUrl } from "@/lib/api";
 import { avatarColor } from "@/lib/colors";
 import { formatBytes } from "@/lib/files";
 import { bubbleTime, remaining } from "@/lib/format";
-import { messageSummary, userName, type NameContext } from "@/lib/names";
+import { userName, type NameContext } from "@/lib/names";
 import type { Attachment, Message } from "@/lib/types";
 import { cx } from "@/lib/utils";
 import { useChat, type UIMessage } from "@/store/chat";
@@ -14,6 +14,7 @@ import { toast, useUI } from "@/store/ui";
 import { Avatar } from "../ui/Avatar";
 import { Menu } from "../ui/Menu";
 import { StatusIcon } from "../ui/StatusIcon";
+import { QuotePanel } from "./QuotePanel";
 
 /** Sender name color: the avatar's saturated tone in light mode, its pastel tone in dark mode. */
 function nameColor(key: string) {
@@ -87,20 +88,15 @@ function ReactionPicker({ onPick, onClose, mine }: { onPick: (e: string) => void
 
 function Quote({ reply, mine, ctx }: { reply: NonNullable<Message["reply_to"]>; mine: boolean; ctx: NameContext }) {
   const focusMessage = useUI((s) => s.focusMessage);
-  const author = reply.sender_id === ctx.meId ? "You" : userName(ctx, reply.sender_id);
   return (
-    <button
-      onClick={() => focusMessage(reply.id)}
-      // Signal's quote: a darker panel 8px in from the bubble's edges, with a solid bar on the left.
-      className={cx(
-        "relative -mx-1 mb-1.5 block w-[calc(100%+0.5rem)] min-w-[min(180px,100%)] overflow-hidden rounded-lg py-1.5 pl-4 pr-3 text-left",
-        mine ? "bg-[color-mix(in_srgb,var(--accent)_50%,black)]" : "bg-[color-mix(in_srgb,var(--chat)_65%,var(--bubble-in))]",
-      )}
-    >
-      <span className={cx("absolute inset-y-0 left-0 w-1", mine ? "bg-white" : "bg-ink-2")} aria-hidden />
-      <div className="text-body font-semibold">{author}</div>
-      <div className={cx("line-clamp-2 text-body", mine ? "text-white" : "text-ink")}>{messageSummary(reply)}</div>
-    </button>
+    <QuotePanel
+      quoted={reply}
+      ctx={ctx}
+      inOwnBubble={mine}
+      onClick={reply.deleted ? undefined : () => focusMessage(reply.id)}
+      // 8px in from the bubble's edges (its padding is 12px), as in Signal.
+      className="-mx-1 mb-2 mt-0.5 w-[calc(100%+0.5rem)] min-w-[min(200px,100%)]"
+    />
   );
 }
 

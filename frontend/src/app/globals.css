@@ -9,7 +9,7 @@
   color-scheme: light;
   --rail: #ffffff;
   --pane: #ffffff;
-  --chat: #ffffff;
+  --chat: #fafafa;
   --line: #e9e9e9;
   --hover: #f2f2f2;
   --selected: #e9e9e9;
@@ -29,6 +29,11 @@
   --chip: #fbe6dc;
   --hero-border: #e3e3e3;
   --chip-ink: #a3482a;
+  /* Reply quotes, sampled from Signal Desktop (light and dark). */
+  --quote-bg: #abc0f4;
+  --quote-bar: #2251e7;
+  --quote-ink: #1b1b1b;
+  --quote-x: #687492;
 }
 
 :root[data-theme="dark"] {
@@ -55,6 +60,10 @@
   --chip: #6b4f45;
   --hero-border: #353535;
   --chip-ink: #df9b82;
+  --quote-bg: #1a3893;
+  --quote-bar: #2251e7;
+  --quote-ink: #ffffff;
+  --quote-x: #102259;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -82,6 +91,10 @@
     --chip: #6b4f45;
     --hero-border: #353535;
     --chip-ink: #df9b82;
+  --quote-bg: #1a3893;
+  --quote-bar: #2251e7;
+  --quote-ink: #ffffff;
+  --quote-x: #102259;
   }
 }
 
