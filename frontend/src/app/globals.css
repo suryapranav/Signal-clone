@@ -35,7 +35,7 @@
   --quote-ink: #1b1b1b;
   --quote-x: #687492;
   --tombstone-border: #b9b9b9; /* outline of a "deleted this message" pill */
-  --composer-focus: #2c6bed; /* message box outline while typing (light theme only, as in Signal) */
+  --composer-focus: #2c6bed; /* message box outline while it has focus, as in Signal */
 }
 
 :root[data-theme="dark"] {
@@ -67,7 +67,7 @@
   --quote-ink: #ffffff;
   --quote-x: #102259;
   --tombstone-border: #5e5e5e;
-  --composer-focus: transparent;
+  --composer-focus: #3d6ae5; /* sampled from Signal Desktop */
 }
 
 @media (prefers-color-scheme: dark) {
@@ -100,7 +100,7 @@
   --quote-ink: #ffffff;
   --quote-x: #102259;
   --tombstone-border: #5e5e5e;
-  --composer-focus: transparent;
+  --composer-focus: #3d6ae5; /* sampled from Signal Desktop */
   }
 }
 
