@@ -1,13 +1,53 @@
 "use client";
 
-import { Mic, Paperclip, SendHorizontal, Smile, X } from "lucide-react";
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { FileText, Mic, Paperclip, SendHorizontal, Smile, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent } from "react";
 import { comingSoon } from "@/lib/actions";
-import { userName, type NameContext } from "@/lib/names";
+import { formatBytes, prepareFile } from "@/lib/files";
+import { messageSummary, userName, type NameContext } from "@/lib/names";
 import { realtime } from "@/lib/socket";
 import type { Conversation } from "@/lib/types";
 import { useChat } from "@/store/chat";
-import { useUI } from "@/store/ui";
+import { toast, useUI } from "@/store/ui";
+
+/** Validate a file and stage it in the composer of the given chat. */
+export async function attachFile(convId: number, file: File) {
+  try {
+    useUI.getState().setPendingFile({ convId, file: await prepareFile(file) });
+  } catch (e) {
+    toast((e as Error).message, { tone: "error" });
+  }
+}
+
+function PendingFile({ file, onRemove }: { file: File; onRemove: () => void }) {
+  const preview = useMemo(() => (file.type.startsWith("image/") ? URL.createObjectURL(file) : null), [file]);
+  useEffect(() => () => {
+    if (preview) URL.revokeObjectURL(preview);
+  }, [preview]);
+  return (
+    <div className="flex items-center gap-2 px-2 pt-2">
+      <div className="relative">
+        {preview ? (
+          // eslint-disable-next-line @next/next/no-img-element -- local blob preview
+          <img src={preview} alt="" className="h-16 w-16 rounded-lg object-cover" />
+        ) : (
+          <div className="flex h-12 items-center gap-2 rounded-lg bg-chat px-3">
+            <FileText size={18} className="text-ink-2" />
+            <span className="max-w-[200px] truncate text-body-sm">{file.name}</span>
+            <span className="text-body-sm text-ink-3">{formatBytes(file.size)}</span>
+          </div>
+        )}
+        <button
+          className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-toast text-toast-ink"
+          onClick={onRemove}
+          aria-label="Remove attachment"
+        >
+          <X size={12} />
+        </button>
+      </div>
+    </div>
+  );
+}
 
 const EMOJI = "😀 😂 🥲 😊 😍 🥰 😘 😎 🤔 😅 😭 😡 👍 👎 👏 🙏 🙌 💪 🤝 👋 ❤️ 🔥 ✨ 🎉 💯 ✅ 👀 🤣 😴 🤯 😬 🥳 ☕ 🍕 🍫 🚀".split(" ");
 const TYPING_REFRESH_MS = 3000; // re-announce while typing continues
@@ -67,7 +107,11 @@ export function Composer({ conv, ctx }: { conv: Conversation; ctx: NameContext }
   const replyTo = useUI((s) => (s.replyTo?.conversation_id === conv.id ? s.replyTo : null));
   const setReplyTo = useUI((s) => s.setReplyTo);
   const send = useChat((s) => s.send);
+  const pending = useUI((s) => (s.pendingFile?.convId === conv.id ? s.pendingFile.file : null));
+  const setPendingFile = useUI((s) => s.setPendingFile);
+  const picker = useRef<HTMLInputElement>(null);
   const typing = useTypingSignal(conv.id);
+  const canSend = !!text.trim() || !!pending;
 
   useEffect(() => {
     drafts.set(conv.id, text);
@@ -83,15 +127,24 @@ export function Composer({ conv, ctx }: { conv: Conversation; ctx: NameContext }
 
   useEffect(() => {
     input.current?.focus();
-  }, [conv.id, replyTo?.id]);
+  }, [conv.id, replyTo?.id, pending]);
 
   function submit() {
     const body = text.trim();
-    if (!body) return;
-    void send(conv.id, body, replyTo);
+    if (!body && !pending) return;
+    void send(conv.id, body, replyTo, pending);
     setText("");
     setReplyTo(null);
+    setPendingFile(null);
     typing.stop();
+  }
+
+  function onPaste(e: ClipboardEvent<HTMLTextAreaElement>) {
+    const file = [...e.clipboardData.files][0];
+    if (file) {
+      e.preventDefault();
+      void attachFile(conv.id, file);
+    }
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
@@ -128,13 +181,14 @@ export function Composer({ conv, ctx }: { conv: Conversation; ctx: NameContext }
           <div className="flex items-start gap-2 px-2 pt-2">
             <div className="min-w-0 flex-1 rounded-lg border-l-[3px] border-accent bg-chat px-2.5 py-1.5">
               <div className="text-[13px] font-semibold leading-4">{replyTo.sender_id === ctx.meId ? "You" : userName(ctx, replyTo.sender_id)}</div>
-              <div className="mt-0.5 line-clamp-2 text-[13px] leading-[18px] text-ink-2">{replyTo.body}</div>
+              <div className="mt-0.5 line-clamp-2 text-[13px] leading-[18px] text-ink-2">{messageSummary(replyTo)}</div>
             </div>
             <button className="icon-btn h-6 w-6" onClick={() => setReplyTo(null)} aria-label="Cancel reply">
               <X size={14} />
             </button>
           </div>
         )}
+        {pending && <PendingFile file={pending.file} onRemove={() => setPendingFile(null)} />}
         <textarea
           ref={input}
           rows={1}
@@ -145,17 +199,29 @@ export function Composer({ conv, ctx }: { conv: Conversation; ctx: NameContext }
             else typing.stop();
           }}
           onKeyDown={onKeyDown}
+          onPaste={onPaste}
           onBlur={typing.stop}
-          placeholder="Message"
+          placeholder={pending ? "Add a message" : "Message"}
           aria-label="Message"
           className="block max-h-[140px] w-full resize-none bg-transparent px-3.5 py-2 text-body text-ink outline-none placeholder:text-ink-3"
         />
       </div>
 
-      <button className="icon-btn h-9 w-9" onClick={() => comingSoon("Attachments")} aria-label="Attach file" title="Attach file">
+      <button className="icon-btn h-9 w-9" onClick={() => picker.current?.click()} aria-label="Attach file" title="Attach file">
         <Paperclip size={19} strokeWidth={1.75} />
       </button>
-      {text.trim() ? (
+      <input
+        ref={picker}
+        type="file"
+        hidden
+        aria-label="Choose file"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          e.target.value = "";
+          if (file) void attachFile(conv.id, file);
+        }}
+      />
+      {canSend ? (
         <button key="send" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent text-white hover:bg-accent-hover" onClick={submit} aria-label="Send" title="Send (Enter)">
           <SendHorizontal size={18} />
         </button>

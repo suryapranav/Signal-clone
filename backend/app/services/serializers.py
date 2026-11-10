@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from ..database import utcnow
 from ..models import (
+    Attachment,
     Conversation,
     ConversationMember,
     Message,
@@ -22,6 +23,7 @@ from ..models import (
 )
 from ..realtime import manager
 from ..schemas import (
+    AttachmentOut,
     ConversationOut,
     MemberOut,
     MessageOut,
@@ -43,6 +45,24 @@ def user_out(user: User) -> UserOut:
         avatar_url=user.avatar_url,
         online=manager.is_online(user.id),
         last_seen_at=user.last_seen_at,
+    )
+
+
+IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
+
+
+def attachment_out(att: Attachment | None) -> AttachmentOut | None:
+    if att is None:
+        return None
+    return AttachmentOut(
+        id=att.id,
+        url=f"/api/attachments/{att.key}",
+        filename=att.filename,
+        content_type=att.content_type,
+        size=att.size,
+        width=att.width,
+        height=att.height,
+        is_image=att.content_type in IMAGE_TYPES,
     )
 
 
@@ -123,9 +143,13 @@ def messages_out(db: Session, messages: Sequence[Message], viewer_id: int) -> li
                 body=m.body,
                 meta=m.meta,
                 client_id=m.client_id,
-                reply_to=ReplyPreview(id=reply.id, sender_id=reply.sender_id, body=reply.body)
+                reply_to=ReplyPreview(
+                    id=reply.id, sender_id=reply.sender_id, body=reply.body,
+                    attachment=attachment_out(reply.attachment),
+                )
                 if reply
                 else None,
+                attachment=attachment_out(m.attachment),
                 reactions=reactions.get(m.id, []),
                 created_at=m.created_at,
                 expires_at=m.expires_at,

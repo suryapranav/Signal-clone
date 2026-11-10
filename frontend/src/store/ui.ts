@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { Message } from "@/lib/types";
+import type { OutgoingFile } from "./chat";
 import { uid } from "@/lib/utils";
 
 export type Tab = "chats" | "calls" | "stories" | "settings";
@@ -14,6 +15,7 @@ export type Modal =
   | { kind: "safety-number"; convId: number }
   | { kind: "coming-soon"; feature: string }
   | { kind: "shortcuts" }
+  | { kind: "image"; url: string; filename: string }
   | {
       kind: "confirm";
       title: string;
@@ -43,6 +45,8 @@ interface UIState {
   focusMessageId: number | null;
   /** Open settings page; null = the section list (on mobile). */
   settingsSection: SettingsSection | null;
+  /** File attached in the composer but not sent yet (picked, pasted or dropped). */
+  pendingFile: { convId: number; file: OutgoingFile } | null;
 
   setTab(tab: Tab): void;
   setLeftMode(mode: LeftMode): void;
@@ -55,6 +59,7 @@ interface UIState {
   setReplyTo(message: Message | null): void;
   focusMessage(id: number | null): void;
   setSettingsSection(section: SettingsSection | null): void;
+  setPendingFile(pending: { convId: number; file: OutgoingFile } | null): void;
   reset(): void;
 }
 
@@ -84,6 +89,7 @@ const initial = {
   replyTo: null,
   focusMessageId: null,
   settingsSection: null as SettingsSection | null,
+  pendingFile: null,
 };
 
 export const useUI = create<UIState>((set, get) => ({
@@ -116,6 +122,7 @@ export const useUI = create<UIState>((set, get) => ({
   setReplyTo: (replyTo) => set({ replyTo }),
   focusMessage: (focusMessageId) => set({ focusMessageId }),
   setSettingsSection: (settingsSection) => set({ settingsSection }),
+  setPendingFile: (pendingFile) => set({ pendingFile }),
   reset: () => set(initial),
 }));
 

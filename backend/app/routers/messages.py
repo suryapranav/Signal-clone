@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from ..database import get_db
-from ..models import ConversationMember, Message, Reaction, User
+from ..models import Attachment, ConversationMember, Message, Reaction, User
 from ..realtime import manager
 from ..schemas import MessageCreateIn, MessageOut, MessagePage, ReactionIn
 from ..security import current_user
@@ -56,9 +56,23 @@ async def send_message(
         if target is None or target.conversation_id != conv_id:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Can't reply to that message")
 
+    attachment = None
+    if body.attachment_id is not None:
+        attachment = db.get(Attachment, body.attachment_id)
+        # Only your own, not-yet-sent upload can be attached.
+        if attachment is None or attachment.uploader_id != me.id or attachment.message_id is not None:
+            existing = body.client_id and db.scalar(
+                select(Message).where(Message.sender_id == me.id, Message.client_id == body.client_id)
+            )
+            if not existing:  # a retry of a send that already went through is fine
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid attachment")
+
     # Sending a message un-archives the chat for the sender, as in Signal.
     membership.is_archived = False
-    msg = create_message(db, conv, me.id, body.body, client_id=body.client_id, reply_to_id=body.reply_to_id)
+    msg = create_message(
+        db, conv, me.id, body.body.strip(),
+        client_id=body.client_id, reply_to_id=body.reply_to_id, attachment=attachment,
+    )
     await publish_message(db, msg, conv)
     return message_out(db, msg, me.id)
 

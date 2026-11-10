@@ -20,7 +20,7 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
 from ..database import utcnow
-from ..models import Contact, Conversation, ConversationMember, Message, MessageReceipt, User
+from ..models import Attachment, Contact, Conversation, ConversationMember, Message, MessageReceipt, User
 from ..realtime import manager
 from .serializers import conversation_out, message_out, message_statuses, not_expired, user_out
 
@@ -38,6 +38,7 @@ def create_message(
     meta: dict | None = None,
     client_id: str | None = None,
     reply_to_id: int | None = None,
+    attachment: Attachment | None = None,
 ) -> Message:
     if client_id:  # idempotent retry
         existing = db.scalar(
@@ -61,6 +62,8 @@ def create_message(
     )
     db.add(msg)
     db.flush()
+    if attachment is not None:
+        attachment.message_id = msg.id
     if kind == "text":  # system events don't need receipts or count as unread
         for m in conv.active_members:
             if m.user_id != sender_id:

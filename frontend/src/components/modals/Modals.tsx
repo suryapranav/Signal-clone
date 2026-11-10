@@ -1,6 +1,6 @@
 "use client";
 
-import { Rocket, ShieldCheck } from "lucide-react";
+import { Download, Rocket, ShieldCheck, X } from "lucide-react";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { api, ApiError } from "@/lib/api";
 import { startDirectChat } from "@/lib/actions";
@@ -236,6 +236,34 @@ function SafetyNumberModal({ convId, onClose }: Of<"safety-number"> & { onClose:
   );
 }
 
+/** Full-screen photo viewer, closed by Esc, the X, or clicking the backdrop. */
+function ImageViewer({ url, filename, onClose }: { url: string; filename: string; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col bg-black/90" onMouseDown={(e) => e.target === e.currentTarget && onClose()} role="dialog" aria-label={filename}>
+      <div className="flex items-center justify-between gap-4 px-4 py-3 text-white">
+        <span className="truncate text-body">{filename}</span>
+        <div className="flex items-center gap-1">
+          <a href={url} download={filename} className="flex h-9 w-9 items-center justify-center rounded-full hover:bg-white/10" aria-label="Download">
+            <Download size={20} />
+          </a>
+          <button className="flex h-9 w-9 items-center justify-center rounded-full hover:bg-white/10" onClick={onClose} aria-label="Close">
+            <X size={20} />
+          </button>
+        </div>
+      </div>
+      <div className="flex min-h-0 flex-1 items-center justify-center p-4 pt-0" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+        {/* eslint-disable-next-line @next/next/no-img-element -- full-size attachment */}
+        <img src={url} alt={filename} className="max-h-full max-w-full animate-pop-in object-contain" />
+      </div>
+    </div>
+  );
+}
+
 const SHORTCUTS: [string, string][] = [
   ["Ctrl / ⌘ + K", "Search chats"],
   ["Ctrl / ⌘ + Alt + N", "New chat"],
@@ -270,6 +298,8 @@ export function Modals() {
           </div>
         </Modal>
       );
+    case "image":
+      return <ImageViewer url={modal.url} filename={modal.filename} onClose={close} />;
     case "shortcuts":
       return (
         <Modal title="Keyboard shortcuts" onClose={close}>

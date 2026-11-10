@@ -1,11 +1,13 @@
 "use client";
 
-import { Reply, SmilePlus, Timer } from "lucide-react";
-import { memo, useEffect, useRef, useState } from "react";
+import { Download, FileText, Reply, SmilePlus, Timer } from "lucide-react";
+import { memo, useEffect, useRef, useState, type ReactNode } from "react";
+import { fileUrl } from "@/lib/api";
 import { avatarColor } from "@/lib/colors";
+import { formatBytes } from "@/lib/files";
 import { bubbleTime, remaining } from "@/lib/format";
-import { userName, type NameContext } from "@/lib/names";
-import type { Message } from "@/lib/types";
+import { messageSummary, userName, type NameContext } from "@/lib/names";
+import type { Attachment, Message } from "@/lib/types";
 import { cx } from "@/lib/utils";
 import { useChat, type UIMessage } from "@/store/chat";
 import { useUI } from "@/store/ui";
@@ -62,7 +64,7 @@ function Quote({ reply, mine, ctx }: { reply: NonNullable<Message["reply_to"]>; 
       className={cx("mb-1 block w-full min-w-[160px] rounded-lg border-l-[3px] px-2.5 py-1.5 text-left", mine ? "border-white/80 bg-white/20" : "border-ink-2 bg-[color-mix(in_srgb,var(--chat)_60%,transparent)]")}
     >
       <div className="text-[13px] font-semibold leading-4">{author}</div>
-      <div className={cx("mt-0.5 line-clamp-2 text-[13px] leading-[18px]", mine ? "text-white/90" : "text-ink-2")}>{reply.body}</div>
+      <div className={cx("mt-0.5 line-clamp-2 text-[13px] leading-[18px]", mine ? "text-white/90" : "text-ink-2")}>{messageSummary(reply)}</div>
     </button>
   );
 }
@@ -94,6 +96,67 @@ function ReactionPills({ msg, mine, ctx }: { msg: UIMessage; mine: boolean; ctx:
   );
 }
 
+const MAX_IMAGE_W = 320;
+const MAX_IMAGE_H = 380;
+
+/** Display size that keeps the aspect ratio inside 320×380, known before the image loads. */
+function imageBox(att: Attachment) {
+  const ratio = att.width && att.height ? att.width / att.height : 4 / 3;
+  let width = Math.min(MAX_IMAGE_W, att.width ?? MAX_IMAGE_W);
+  if (width / ratio > MAX_IMAGE_H) width = MAX_IMAGE_H * ratio;
+  return { width: Math.max(120, Math.round(width)), aspectRatio: String(ratio) };
+}
+
+/**
+ * `alone`: photo with no caption, quote or name, so it fills the bubble.
+ * Otherwise it bleeds into the bubble's side padding (negative margins);
+ * `flushTop` also pulls it up when nothing sits above it.
+ */
+function ImageAttachment({ att, alone, flushTop, overlay }: { att: Attachment; alone: boolean; flushTop: boolean; overlay?: ReactNode }) {
+  const openModal = useUI((s) => s.openModal);
+  const src = fileUrl(att.url);
+  return (
+    <button
+      className={cx(
+        "relative block overflow-hidden bg-field",
+        alone ? "rounded-[15px]" : cx("-mx-2.5 mb-1.5 rounded-[14px]", flushTop ? "-mt-[4px]" : "mt-1"),
+      )}
+      // The negative margins widen the available space by 1.25rem, so allow for it.
+      style={{ ...imageBox(att), maxWidth: alone ? "100%" : "calc(100% + 1.25rem)" }}
+      onClick={() => openModal({ kind: "image", url: src, filename: att.filename })}
+      aria-label={`Open image ${att.filename}`}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element -- served by our API, sized from stored dimensions */}
+      <img src={src} alt={att.filename} className="h-full w-full object-cover" loading="lazy" />
+      {overlay && <span className="absolute bottom-1.5 right-2 rounded-full bg-black/45 px-2 py-0.5">{overlay}</span>}
+    </button>
+  );
+}
+
+function FileAttachment({ att, mine }: { att: Attachment; mine: boolean }) {
+  return (
+    <a
+      href={fileUrl(att.url)}
+      download={att.filename}
+      target="_blank"
+      rel="noreferrer"
+      className={cx(
+        "mb-1 flex min-w-[220px] max-w-full items-center gap-3 rounded-xl px-2 py-1.5",
+        mine ? "bg-white/15 hover:bg-white/25" : "bg-[color-mix(in_srgb,var(--chat)_55%,transparent)] hover:bg-chat",
+      )}
+    >
+      <span className={cx("flex h-10 w-10 shrink-0 items-center justify-center rounded-full", mine ? "bg-white/20" : "bg-field")}>
+        <FileText size={20} />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[13px] font-medium leading-[18px]">{att.filename}</span>
+        <span className={cx("block text-body-sm", mine ? "text-white/80" : "text-ink-2")}>{formatBytes(att.size)}</span>
+      </span>
+      <Download size={16} className="shrink-0 opacity-80" />
+    </a>
+  );
+}
+
 interface BubbleProps {
   msg: UIMessage;
   ctx: NameContext;
@@ -113,7 +176,10 @@ export const MessageBubble = memo(function MessageBubble({ msg, ctx, isGroup, ca
   const sender = ctx.users[msg.sender_id ?? -1];
   const status = msg.localStatus ?? msg.status ?? "sent";
   const failed = msg.localStatus === "failed";
-  const jumbo = !msg.reply_to && isJumbomoji(msg.body);
+  const att = msg.attachment;
+  const showName = !mine && isGroup && first && !!sender;
+  const imageOnly = !!att?.is_image && !msg.body && !msg.reply_to && !showName;
+  const jumbo = !msg.reply_to && !att && isJumbomoji(msg.body);
   const interactive = canInteract && msg.id > 0;
   const myReaction = msg.reactions.find((r) => r.user_id === ctx.meId)?.emoji;
 
@@ -144,8 +210,15 @@ export const MessageBubble = memo(function MessageBubble({ msg, ctx, isGroup, ca
     </div>
   );
 
+  // Time, timer and receipt. Over a photo with no caption it sits on the image in white.
   const meta = (
-    <span className={cx("ml-auto flex shrink-0 translate-y-[3px] items-center gap-1 text-[11px] leading-4", jumbo ? "text-ink-2" : mine ? "text-white/80" : "text-ink-2")}>
+    <span
+      className={cx(
+        "ml-auto flex shrink-0 items-center gap-1 text-[11px] leading-4",
+        imageOnly ? "text-white [--status-bg:transparent] [--status-check:#000]" : "translate-y-[3px]",
+        !imageOnly && (jumbo ? "text-ink-2" : mine ? "text-white/80" : "text-ink-2"),
+      )}
+    >
       {msg.expires_at && (
         <span className="flex items-center gap-0.5" title="Disappearing message">
           <Timer size={11} />
@@ -172,21 +245,33 @@ export const MessageBubble = memo(function MessageBubble({ msg, ctx, isGroup, ca
         <div
           className={cx(
             "w-fit max-w-full",
-            jumbo ? "px-1" : cx("px-3 py-[7px]", radius, mine ? "bg-accent text-white" : "bg-bubble-in text-ink"),
+            jumbo ? "px-1" : cx(imageOnly ? "p-[3px]" : "px-3 py-[7px]", radius, mine ? "bg-accent text-white" : "bg-bubble-in text-ink"),
             failed && "opacity-70",
           )}
           style={mine ? { ["--status-bg" as string]: "var(--accent)", ["--status-check" as string]: "var(--accent)" } : undefined}
         >
-          {!mine && isGroup && first && sender && (
+          {showName && sender && (
             <div className="mb-0.5 text-[13px] font-semibold leading-4" style={{ color: nameColor(sender.avatar_color) }}>
               {userName(ctx, sender.id)}
             </div>
           )}
           {msg.reply_to && <Quote reply={msg.reply_to} mine={mine} ctx={ctx} />}
-          <div className="flex flex-wrap items-end justify-end gap-x-2">
-            <p className={cx("min-w-0 whitespace-pre-wrap text-left [overflow-wrap:anywhere]", jumbo ? "text-[40px] leading-[48px]" : "text-body")}>{msg.body}</p>
-            {meta}
-          </div>
+          {att &&
+            (att.is_image ? (
+              <ImageAttachment att={att} alone={imageOnly} flushTop={!showName && !msg.reply_to} overlay={imageOnly ? meta : undefined} />
+            ) : (
+              <FileAttachment att={att} mine={mine} />
+            ))}
+          {!imageOnly && (
+            <div className="flex flex-wrap items-end justify-end gap-x-2">
+              {msg.body && (
+                <p className={cx("min-w-0 whitespace-pre-wrap text-left [overflow-wrap:anywhere]", jumbo ? "text-[40px] leading-[48px]" : "text-body")}>
+                  {msg.body}
+                </p>
+              )}
+              {meta}
+            </div>
+          )}
         </div>
         {msg.reactions.length > 0 && <ReactionPills msg={msg} mine={mine} ctx={ctx} />}
         {failed && (

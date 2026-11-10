@@ -7,6 +7,7 @@ Run manually with:  python -m app.seed --reset
 """
 
 import argparse
+import secrets
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
@@ -15,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from .database import Base, SessionLocal, engine, utcnow
 from .models import (
+    Attachment,
     Contact,
     Conversation,
     ConversationMember,
@@ -23,6 +25,7 @@ from .models import (
     Reaction,
     User,
 )
+from .seed_assets import PACKING_LIST, mountain_photo
 from .services.conversations import direct_key
 
 USERS = [
@@ -57,6 +60,8 @@ class Msg:
     reply_to: int | None = None  # index into the same chat's messages
     reactions: dict[str, str] = field(default_factory=dict)  # user key -> emoji
     system: str | None = None  # system event key instead of text
+    # (filename, content type, bytes factory, width, height)
+    attachment: tuple | None = None
 
 
 @dataclass
@@ -138,13 +143,16 @@ CHATS = [
             Msg("diego", "Count me in 🙌", 3980),
             Msg("priya", "I found a second route that goes past the waterfall", 30),
             Msg("priya", "It's about 2km longer though", 29),
+            Msg("diego", "The view from the top last time", 27,
+                attachment=("summit.png", "image/png", mountain_photo, 480, 320), reactions={"alice": "😮"}),
+            Msg("priya", "", 26, attachment=("packing-list.txt", "text/plain", lambda: PACKING_LIST, None, None)),
             Msg("diego", "Waterfall route for sure", 20, reply_to=4, reactions={"bob": "🔥", "priya": "😂"}),
         ],
         title="Weekend Hike 🥾",
         admins=("alice",),
         color="A130",
         description="Saturday trails and snacks",
-        unread={"alice": 3},
+        unread={"alice": 5},
     ),
     Chat(
         ["priya", "alice", "rahul", "sara", "kenji"],
@@ -209,6 +217,14 @@ def _seed_chat(db: Session, chat: Chat, users: dict[str, User], now: datetime) -
         db.add(msg)
         db.flush()
         created.append(msg)
+        if m.attachment:
+            filename, content_type, make, width, height = m.attachment
+            data = make()
+            db.add(Attachment(
+                key=secrets.token_urlsafe(24), uploader_id=users[m.sender].id, message_id=msg.id,
+                filename=filename, content_type=content_type, size=len(data),
+                width=width, height=height, data=data, created_at=sent_at,
+            ))
         for user_key, emoji in m.reactions.items():
             db.add(Reaction(message_id=msg.id, user_id=users[user_key].id, emoji=emoji,
                             created_at=sent_at + timedelta(minutes=1)))

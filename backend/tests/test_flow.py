@@ -150,3 +150,56 @@ def test_disappearing_messages(client):
     ids = [x["id"] for x in client.get(f"/api/conversations/{conv['id']}/messages", headers=auth(b)).json()["messages"]]
     assert m["id"] not in ids
     client.patch(f"/api/conversations/{conv['id']}", json={"disappearing_seconds": 0}, headers=auth(a))
+
+
+PNG_1x1 = bytes.fromhex(
+    "89504e470d0a1a0a0000000d4948445200000001000000010806000000"
+    "1f15c4890000000d49444154789c6360000002000154a24f5d0000000049454e44ae426082"
+)
+
+
+def test_attachments(client):
+    a, b, d = login(client, ALICE), login(client, BOB), login(client, DIEGO)
+    conv = _direct_with(client, a, b["_user"]["id"])
+
+    r = client.post("/api/attachments", files={"file": ("pic.png", PNG_1x1, "image/png")},
+                    data={"width": "1", "height": "1"}, headers=auth(a))
+    assert r.status_code == 201, r.text
+    att = r.json()
+    assert att["is_image"] and att["width"] == 1
+    # Not downloadable until it's actually sent in a message.
+    assert client.get(att["url"]).status_code == 404
+
+    # Someone else can't send Alice's upload.
+    bob_conv = _direct_with(client, b, d["_user"]["id"])
+    r = client.post(f"/api/conversations/{bob_conv['id']}/messages", json={"attachment_id": att["id"]}, headers=auth(b))
+    assert r.status_code == 400
+
+    # Image with no caption is a valid message.
+    msg = client.post(f"/api/conversations/{conv['id']}/messages",
+                      json={"attachment_id": att["id"], "client_id": "img-1"}, headers=auth(a)).json()
+    assert msg["body"] == "" and msg["attachment"]["filename"] == "pic.png"
+    # Retrying the same send is idempotent even though the attachment is now linked.
+    again = client.post(f"/api/conversations/{conv['id']}/messages",
+                        json={"attachment_id": att["id"], "client_id": "img-1"}, headers=auth(a))
+    assert again.status_code == 201 and again.json()["id"] == msg["id"]
+
+    page = client.get(f"/api/conversations/{conv['id']}/messages", headers=auth(b)).json()
+    got = next(m for m in page["messages"] if m["id"] == msg["id"])
+    file = client.get(got["attachment"]["url"])
+    assert file.status_code == 200 and file.content == PNG_1x1 and file.headers["content-type"] == "image/png"
+
+    # Non-image files are always served as downloads.
+    r = client.post("/api/attachments", files={"file": ("x.html", b"<script>alert(1)</script>", "text/html")}, headers=auth(a))
+    doc = client.post(f"/api/conversations/{conv['id']}/messages",
+                      json={"attachment_id": r.json()["id"], "body": "notes"}, headers=auth(a)).json()
+    dl = client.get(doc["attachment"]["url"])
+    assert dl.headers["content-type"] == "application/octet-stream"
+    assert dl.headers["content-disposition"].startswith("attachment;")
+
+
+def test_empty_message_rejected(client):
+    a, b = login(client, ALICE), login(client, BOB)
+    conv = _direct_with(client, a, b["_user"]["id"])
+    r = client.post(f"/api/conversations/{conv['id']}/messages", json={"body": "   "}, headers=auth(a))
+    assert r.status_code == 422

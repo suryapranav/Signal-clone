@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { conversationTitle, firstName } from "@/lib/names";
+import { conversationTitle, firstName, messageSummary } from "@/lib/names";
 import { getPref } from "@/lib/prefs";
 import { realtime } from "@/lib/socket";
 import type { ServerEvent } from "@/lib/types";
@@ -18,7 +18,7 @@ function maybeNotify(event: ServerEvent) {
   if (viewing) return;
   const ctx = { meId: s.me.id, users: s.users, nicknames: s.nicknames };
   const who = conv.kind === "group" ? `${firstName(ctx, msg.sender_id)} in ${conversationTitle(ctx, conv)}` : conversationTitle(ctx, conv);
-  const body = getPref("notify-preview", true) ? (msg.body.length > 60 ? msg.body.slice(0, 60) + "…" : msg.body) : "New message";
+  const body = getPref("notify-preview", true) ? (messageSummary(msg).length > 60 ? messageSummary(msg).slice(0, 60) + "…" : messageSummary(msg)) : "New message";
   toast(`${who}: ${body}`, {
     action: {
       label: "View",

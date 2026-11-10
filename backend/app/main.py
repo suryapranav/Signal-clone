@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
 from .database import Base, SessionLocal, engine
-from .routers import auth, contacts, conversations, messages, users, ws
+from .routers import attachments, auth, contacts, conversations, messages, users, ws
 from .seed import seed_if_empty
 from .services.messaging import purge_expired
 
@@ -54,7 +54,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-for r in (auth, users, contacts, conversations, messages):
+for r in (auth, users, contacts, conversations, messages, attachments):
     app.include_router(r.router, prefix="/api")
 app.include_router(ws.router)
 

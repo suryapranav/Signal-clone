@@ -1,3 +1,4 @@
+import { attachmentLabel } from "./files";
 import { timerLabel } from "./format";
 import type { Conversation, Message, User } from "./types";
 
@@ -78,8 +79,16 @@ export function systemText(ctx: NameContext, msg: Message): string {
 export function previewText(ctx: NameContext, conv: Conversation, msg: Message | null): string {
   if (!msg) return isNoteToSelf(conv, ctx.meId) ? "Add notes to yourself" : "";
   if (msg.kind === "system") return systemText(ctx, msg);
-  if (conv.kind === "group" && msg.sender_id !== ctx.meId) return `${firstName(ctx, msg.sender_id)}: ${msg.body}`;
-  return msg.body;
+  const text = messageSummary(msg);
+  if (conv.kind === "group" && msg.sender_id !== ctx.meId) return `${firstName(ctx, msg.sender_id)}: ${text}`;
+  return text;
+}
+
+/** Text of a message, with its attachment shown as "📷 Photo" / "📎 file.pdf". */
+export function messageSummary(msg: Pick<Message, "body" | "attachment">): string {
+  if (!msg.attachment) return msg.body;
+  const label = attachmentLabel(msg.attachment);
+  return msg.body ? `${label.split(" ")[0]} ${msg.body}` : label;
 }
 
 export function initials(name: string): string {

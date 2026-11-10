@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { api } from "@/lib/api";
 import { realtime, type ConnectionState } from "@/lib/socket";
-import type { Contact, Conversation, Message, MessageStatus, ServerEvent, User } from "@/lib/types";
+import type { Attachment, Contact, Conversation, Message, MessageStatus, ServerEvent, User } from "@/lib/types";
 import { uid } from "@/lib/utils";
 
 /** A message as the UI holds it: server fields plus client-only send state. */
@@ -13,6 +13,18 @@ export interface Thread {
   loading: boolean;
   loaded: boolean;
 }
+
+/** A file picked in the composer, with image dimensions when known. */
+export interface OutgoingFile {
+  file: File;
+  size: { width: number; height: number } | null;
+}
+
+export const IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
+
+/** Files waiting to be uploaded/sent, keyed by the message's client_id. The
+ *  uploaded id is remembered so a retry doesn't upload the file twice. */
+const outbox = new Map<string, OutgoingFile & { uploadedId?: number }>();
 
 interface ChatState {
   me: User | null;
@@ -39,7 +51,7 @@ interface ChatState {
   open(id: number | null): void;
   loadThread(id: number): Promise<void>;
   loadOlder(id: number): Promise<void>;
-  send(convId: number, body: string, replyTo?: Message | null): Promise<void>;
+  send(convId: number, body: string, replyTo?: Message | null, file?: OutgoingFile | null): Promise<void>;
   retry(convId: number, clientId: string): Promise<void>;
   markRead(convId: number): void;
   toggleReaction(message: Message, emoji: string): Promise<void>;
@@ -64,7 +76,12 @@ function sameMessage(a: Message, b: Message) {
 }
 
 function merge(old: UIMessage, incoming: Message): UIMessage {
-  return { ...old, ...incoming, status: bestStatus(old.status, incoming.status), localStatus: undefined };
+  // Keep showing the local preview of a photo we just sent instead of re-downloading it.
+  const attachment =
+    incoming.attachment && old.attachment?.url.startsWith("blob:")
+      ? { ...incoming.attachment, url: old.attachment.url }
+      : incoming.attachment;
+  return { ...old, ...incoming, attachment, status: bestStatus(old.status, incoming.status), localStatus: undefined };
 }
 
 /** Insert or update a message, keeping server messages in id order. */
@@ -160,7 +177,12 @@ export const useChat = create<ChatState>((set, get) => {
 
   async function deliver(convId: number, body: string, clientId: string, replyToId?: number) {
     try {
-      const saved = await api.sendMessage(convId, body, clientId, replyToId);
+      const pending = outbox.get(clientId);
+      if (pending && pending.uploadedId == null) {
+        pending.uploadedId = (await api.uploadAttachment(pending.file, pending.size)).id;
+      }
+      const saved = await api.sendMessage(convId, body, clientId, replyToId, pending?.uploadedId);
+      outbox.delete(clientId);
       ingest(saved);
     } catch {
       set((s) => {
@@ -250,10 +272,24 @@ export const useChat = create<ChatState>((set, get) => {
       }
     },
 
-    send: async (convId, body, replyTo) => {
+    send: async (convId, body, replyTo, file) => {
       const me = get().me;
       if (!me) return;
       const clientId = uid();
+      let attachment: Attachment | null = null;
+      if (file) {
+        outbox.set(clientId, { ...file });
+        attachment = {
+          id: -1,
+          url: URL.createObjectURL(file.file),
+          filename: file.file.name,
+          content_type: file.file.type,
+          size: file.file.size,
+          width: file.size?.width ?? null,
+          height: file.size?.height ?? null,
+          is_image: IMAGE_TYPES.has(file.file.type),
+        };
+      }
       // Optimistic message: shown immediately with the "sending" indicator.
       ingest({
         id: -Date.now(),
@@ -263,7 +299,10 @@ export const useChat = create<ChatState>((set, get) => {
         body,
         meta: null,
         client_id: clientId,
-        reply_to: replyTo ? { id: replyTo.id, sender_id: replyTo.sender_id, body: replyTo.body } : null,
+        reply_to: replyTo
+          ? { id: replyTo.id, sender_id: replyTo.sender_id, body: replyTo.body, attachment: replyTo.attachment }
+          : null,
+        attachment,
         reactions: [],
         created_at: new Date().toISOString(),
         expires_at: null,

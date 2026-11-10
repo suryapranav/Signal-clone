@@ -7,6 +7,7 @@
     messages ──< message_receipts >── users     (one row per recipient)
     messages ──< reactions >── users
     messages ──? messages                       (reply_to)
+    messages ──? attachments >── users          (uploader)
 
 Design notes
 - Direct chats and groups share one `conversations` table (kind = direct|group)
@@ -15,6 +16,9 @@ Design notes
   at most one direct chat per pair of users. "Note to Self" is "<id>:<id>".
 - Removing someone from a group sets `left_at` instead of deleting the row, so
   they keep read-only access to history up to that moment.
+- Attachments are uploaded first (message_id NULL), then linked when the
+  message is sent. Bytes live in a deferred BLOB column, so listing messages
+  never loads file contents; files are served by an unguessable random key.
 - Message status (sent / delivered / read) is never stored on the message; it is
   derived from `message_receipts`, which makes groups work the same as 1:1.
   Unread counts are derived from the same table (receipts with read_at NULL).
@@ -30,11 +34,12 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, deferred, mapped_column, relationship
 
 from .database import Base, utcnow
 
@@ -184,6 +189,35 @@ class Message(Base):
     expires_at: Mapped[datetime | None] = mapped_column(DateTime, index=True)
 
     reply_to: Mapped["Message | None"] = relationship(remote_side=[id])
+    attachment: Mapped["Attachment | None"] = relationship(
+        back_populates="message", uselist=False, lazy="selectin", passive_deletes=True
+    )
+
+
+class Attachment(Base):
+    """A file sent with a message (one per message). The bytes are stored in
+    SQLite so the demo needs no separate file storage."""
+
+    __tablename__ = "attachments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    # Random, unguessable token used in the download URL.
+    key: Mapped[str] = mapped_column(String(48), unique=True)
+    uploader_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    # NULL between upload and send.
+    message_id: Mapped[int | None] = mapped_column(
+        ForeignKey("messages.id", ondelete="CASCADE"), unique=True
+    )
+    filename: Mapped[str] = mapped_column(String(255))
+    content_type: Mapped[str] = mapped_column(String(100))
+    size: Mapped[int] = mapped_column(Integer)
+    # Image dimensions, so the client can reserve space before it loads.
+    width: Mapped[int | None] = mapped_column(Integer)
+    height: Mapped[int | None] = mapped_column(Integer)
+    data: Mapped[bytes] = deferred(mapped_column(LargeBinary))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    message: Mapped[Message | None] = relationship(back_populates="attachment")
 
 
 class MessageReceipt(Base):

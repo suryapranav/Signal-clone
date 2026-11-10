@@ -4,7 +4,7 @@ import re
 from datetime import datetime, timezone
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, PlainSerializer, field_validator
+from pydantic import BaseModel, Field, PlainSerializer, field_validator, model_validator
 
 from .models import AVATAR_COLORS
 
@@ -129,10 +129,22 @@ class ContactCreateIn(BaseModel):
 MessageStatus = Literal["sent", "delivered", "read"]
 
 
+class AttachmentOut(BaseModel):
+    id: int
+    url: str  # relative to the API origin
+    filename: str
+    content_type: str
+    size: int
+    width: int | None
+    height: int | None
+    is_image: bool
+
+
 class ReplyPreview(BaseModel):
     id: int
     sender_id: int | None
     body: str
+    attachment: AttachmentOut | None
 
 
 class ReactionOut(BaseModel):
@@ -149,6 +161,7 @@ class MessageOut(BaseModel):
     meta: dict | None
     client_id: str | None
     reply_to: ReplyPreview | None
+    attachment: AttachmentOut | None
     reactions: list[ReactionOut]
     created_at: UTCDateTime
     expires_at: UTCDateTime | None
@@ -157,16 +170,16 @@ class MessageOut(BaseModel):
 
 
 class MessageCreateIn(BaseModel):
-    body: str = Field(min_length=1, max_length=4000)
+    body: str = Field(default="", max_length=4000)
     client_id: str | None = Field(default=None, max_length=64)
     reply_to_id: int | None = None
+    attachment_id: int | None = None
 
-    @field_validator("body")
-    @classmethod
-    def _not_blank(cls, v: str) -> str:
-        if not v.strip():
+    @model_validator(mode="after")
+    def _not_empty(self) -> "MessageCreateIn":
+        if not self.body.strip() and self.attachment_id is None:
             raise ValueError("Message can't be empty")
-        return v
+        return self
 
 
 class MessagePage(BaseModel):

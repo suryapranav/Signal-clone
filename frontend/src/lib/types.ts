@@ -36,6 +36,17 @@ export type SystemEvent =
   | "admin_granted"
   | "admin_revoked";
 
+export interface Attachment {
+  id: number;
+  url: string; // API path, or a blob: URL while an optimistic upload is in flight
+  filename: string;
+  content_type: string;
+  size: number;
+  width: number | null;
+  height: number | null;
+  is_image: boolean;
+}
+
 export interface Message {
   id: number;
   conversation_id: number;
@@ -44,7 +55,8 @@ export interface Message {
   body: string; // text, or a SystemEvent key when kind === "system"
   meta: Record<string, unknown> | null;
   client_id: string | null;
-  reply_to: { id: number; sender_id: number | null; body: string } | null;
+  reply_to: { id: number; sender_id: number | null; body: string; attachment: Attachment | null } | null;
+  attachment: Attachment | null;
   reactions: { user_id: number; emoji: string }[];
   created_at: string;
   expires_at: string | null;

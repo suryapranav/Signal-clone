@@ -1,4 +1,5 @@
 import type {
+  Attachment,
   AuthResponse,
   Contact,
   Conversation,
@@ -44,15 +45,21 @@ function errorMessage(body: unknown, fallback: string): string {
   return fallback;
 }
 
+/** Absolute URL for an attachment (optimistic ones are already blob: URLs). */
+export function fileUrl(url: string): string {
+  return url.startsWith("/") ? API_URL + url : url;
+}
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const token = tokenStore.get();
+  const isForm = body instanceof FormData;
   const res = await fetch(`${API_URL}/api${path}`, {
     method,
     headers: {
-      ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+      ...(body !== undefined && !isForm ? { "Content-Type": "application/json" } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    body: body === undefined ? undefined : isForm ? body : JSON.stringify(body),
   });
   if (res.status === 204) return undefined as T;
   const data = await res.json().catch(() => null);
@@ -101,12 +108,22 @@ export const api = {
   // messages
   messages: (convId: number, beforeId?: number) =>
     request<MessagePage>("GET", `/conversations/${convId}/messages${beforeId ? `?before_id=${beforeId}` : ""}`),
-  sendMessage: (convId: number, body: string, clientId: string, replyToId?: number) =>
+  sendMessage: (convId: number, body: string, clientId: string, replyToId?: number, attachmentId?: number) =>
     request<Message>("POST", `/conversations/${convId}/messages`, {
       body,
       client_id: clientId,
       reply_to_id: replyToId,
+      attachment_id: attachmentId,
     }),
+  uploadAttachment: (file: File, size?: { width: number; height: number } | null) => {
+    const form = new FormData();
+    form.append("file", file);
+    if (size) {
+      form.append("width", String(size.width));
+      form.append("height", String(size.height));
+    }
+    return request<Attachment>("POST", "/attachments", form);
+  },
   react: (messageId: number, emoji: string) => request<void>("PUT", `/messages/${messageId}/reaction`, { emoji }),
   unreact: (messageId: number) => request<void>("DELETE", `/messages/${messageId}/reaction`),
 };
