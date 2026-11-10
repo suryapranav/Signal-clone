@@ -1,10 +1,10 @@
 import { create } from "zustand";
 import { api, ApiError } from "@/lib/api";
-import { getPref } from "@/lib/prefs";
+import { getPref, setPrefsOwner } from "@/lib/prefs";
 import { realtime, type ConnectionState } from "@/lib/socket";
 import type { Attachment, Contact, Conversation, Message, MessageStatus, ServerEvent, User } from "@/lib/types";
 import { uid } from "@/lib/utils";
-import { toast } from "./ui";
+import { toast, useUI } from "./ui";
 
 /** A message as the UI holds it: server fields plus client-only send state. */
 export type UIMessage = Message & { localStatus?: "sending" | "failed" };
@@ -254,7 +254,14 @@ export const useChat = create<ChatState>((set, get) => {
     ...initial,
 
     reset: () => set(initial),
-    setMe: (me) => set((s) => ({ me, users: withUsers(s.users, [me]) })),
+    setMe: (me) => {
+      // A different account signed in: switch to its own settings and theme.
+      if (get().me?.id !== me.id) {
+        setPrefsOwner(me.id);
+        useUI.getState().loadUserTheme();
+      }
+      set((s) => ({ me, users: withUsers(s.users, [me]) }));
+    },
     setConnection: (connection) => set({ connection }),
 
     bootstrap: async () => {

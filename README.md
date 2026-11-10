@@ -357,6 +357,7 @@ Render's free tier sleeps after inactivity, and the first request takes about 50
 - **Profile photos and attachments are stored in the database** (photos as data URLs up to ~400 KB, attachments as BLOBs up to 5 MB, one per message). This keeps deployment to an API plus a database, with no separate file storage.
 - **Single backend instance:** the WebSocket registry is in memory.
 - **Tables are created on startup** (`create_all`) rather than through migrations. Because the schema only grows, a small startup step (`add_missing_columns` in `database.py`) adds any new nullable column an existing database lacks, so a database created before a feature keeps working after an upgrade.
+- **Settings live where they matter.** Read receipts are stored on the server because they change what other people see. The rest (theme, Enter key sends, spell check, typing indicators, notifications) are kept in the browser under the signed-in account's id, so several demo accounts can share one browser without inheriting each other's settings.
 - **Edit and delete for everyone are limited to 24 hours after sending.** There's no edit history; the latest text replaces the old one.
 - **Disappearing timers start when a message is sent** (Signal starts them when the message is read), which keeps the logic server-side and deterministic.
 

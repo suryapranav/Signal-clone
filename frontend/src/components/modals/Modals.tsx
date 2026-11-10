@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { api, ApiError } from "@/lib/api";
 import { startDirectChat } from "@/lib/actions";
 import { formatPhone, fullDateTime } from "@/lib/format";
+import { userKey } from "@/lib/prefs";
 import { directPeer, userName } from "@/lib/names";
 import type { AvatarColor, MessageInfo, User } from "@/lib/types";
 import { useNames } from "@/hooks/useNames";
@@ -197,7 +198,7 @@ function SafetyNumberModal({ convId, onClose }: Of<"safety-number"> & { onClose:
   const conv = useChat((s) => s.conversations[convId]);
   const me = useChat((s) => s.me)!;
   const peer = conv && directPeer(conv, me.id);
-  const key = `signal.verified.${convId}`;
+  const key = userKey(`verified.${convId}`); // your own verification, not whoever used this browser before
   const [verified, setVerified] = useState(false);
   useEffect(() => {
     try {

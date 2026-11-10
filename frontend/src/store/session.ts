@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { api, tokenStore } from "@/lib/api";
+import { setPrefsOwner } from "@/lib/prefs";
 import { realtime } from "@/lib/socket";
 import { useChat } from "./chat";
 import { useUI } from "./ui";
@@ -27,6 +28,8 @@ export const useSession = create<SessionState>((set) => ({
     realtime.disconnect();
     useChat.getState().reset();
     useUI.getState().reset();
+    setPrefsOwner(null);
+    useUI.getState().loadUserTheme(); // back to System on the sign-in screen
     set({ token: null });
   },
 }));

@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { Message } from "@/lib/types";
 import type { OutgoingFile } from "./chat";
+import { readUserSetting, writeUserSetting } from "@/lib/prefs";
 import { uid } from "@/lib/utils";
 
 export type Tab = "chats" | "calls" | "stories" | "settings";
@@ -63,6 +64,8 @@ interface UIState {
   toast(text: string, opts?: { tone?: Toast["tone"]; action?: Toast["action"]; ms?: number }): void;
   dismissToast(id: string): void;
   setTheme(theme: Theme): void;
+  /** Apply the signed-in user's own theme (System when they never chose one). */
+  loadUserTheme(): void;
   setReplyTo(message: Message | null): void;
   setEditing(message: Message | null): void;
   focusMessage(id: number | null): void;
@@ -130,13 +133,19 @@ export const useUI = create<UIState>((set, get) => ({
   dismissToast: (id) => set({ toasts: get().toasts.filter((t) => t.id !== id) }),
 
   setTheme: (theme) => {
+    writeUserSetting("theme", theme);
     try {
+      // Also remembered for this browser, so the next page load paints in it before sign-in completes.
       localStorage.setItem(THEME_KEY, theme);
     } catch {
       /* not persisted in private mode */
     }
     applyTheme(theme);
     set({ theme });
+  },
+  loadUserTheme: () => {
+    const saved = readUserSetting("theme");
+    get().setTheme(saved === "light" || saved === "dark" ? saved : "system");
   },
 
   setReplyTo: (replyTo) => set(replyTo ? { replyTo, editing: null } : { replyTo }),
