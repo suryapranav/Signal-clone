@@ -8,6 +8,27 @@ A functional clone of the Signal messenger: phone-number onboarding, contacts, 1
 
 > Live demo: _TBD_ · API docs: `<backend-url>/docs`
 
+## Features
+
+**Core**
+- **Onboarding:** phone number → 6-digit code (mocked, `123456`) → profile (name, photo or avatar color). Sessions persist across reloads; log out from Settings.
+- **Chat list:** sorted by latest activity with pinned chats first, last-message preview with your own message's receipt icon, unread badges, online dots, live "typing" dots, search across chats and contacts, an unread-only filter, and archive, pin and mute from each row's menu.
+- **1:1 messaging:** real-time delivery, timestamps, typing indicators, and Signal's sending / sent / delivered / read circles. Sends are optimistic and can be retried if they fail.
+- **Groups:** create with a name, color and members; view members; admins can add or remove members, promote or demote admins, and edit the name and description; any member can leave. Every change appears as a system message ("Alice added Bob.") worded from each viewer's point of view.
+- **Contacts:** add by phone number or username, start chats from contacts, and an "Add to contacts" prompt for people you've chatted with but not saved.
+- **Signal experience:** nav rail with Chats, Calls and Stories; three-pane layout; grouped message bubbles with sender names and avatars in groups; date separators; conversation header with presence or last seen; chat and group settings pages; modals; toasts; settings pages (profile, appearance, chats, notifications, privacy, linked devices).
+
+**Bonus**
+- Emoji reactions (Signal's six quick reactions; one per person; tap a reaction to toggle it)
+- Reply-to with quoted messages (click a quote to jump to the original)
+- Disappearing messages that actually work (per-chat timer; messages count down and are deleted on the server)
+- Dark mode (System, Light or Dark)
+- Responsive layout: single pane with back navigation on phones
+- Keyboard shortcuts: `Ctrl/⌘ K` search · `Ctrl/⌘ Alt N` new chat · `Alt ↑/↓` switch chats · `Esc` cancel reply or close panel · `Ctrl/⌘ /` list all shortcuts
+- Jumbo emoji, emoji picker, per-chat drafts, unread count in the tab title, and in-app message notifications
+
+**Placeholders ("Coming soon"):** voice and video calls, Stories, linked devices, attachments and voice notes.
+
 ## Demo accounts
 
 Every number uses the verification code **`123456`** (verification is mocked).
@@ -223,9 +244,50 @@ backend/
   tests/                 end-to-end REST + WebSocket tests
 frontend/
   src/
-    lib/types.ts         TypeScript mirror of the API contract
-    lib/api.ts           typed REST client
+    app/                 Next.js entry (layout, theme bootstrap, page)
+    lib/
+      types.ts           TypeScript mirror of the API contract
+      api.ts             typed REST client
+      socket.ts          reconnecting WebSocket client (backoff, heartbeat, resync)
+      actions.ts         cross-store actions (open chat, start DM, pin/archive/mute)
+      names.ts           display names, chat titles, system-message text
+      format.ts          Signal-style timestamps and timer labels
+      colors.ts          Signal avatar palette
+    store/
+      chat.ts            Zustand store: users, chats, threads, typing + event reducer
+      ui.ts              navigation, modals, toasts, theme
+      session.ts         sign in / sign out
+    hooks/               useRealtime, useNames, useNow
+    components/
+      onboarding/        phone, code and profile steps
+      shell/             app shell, nav rail, placeholders
+      chats/             chat list, rows, new chat, new group
+      conversation/      header, message list, bubble, composer
+      details/           chat / group settings and member admin
+      settings/          settings pages, avatar picker
+      modals/            find user, add members, edit group, safety number, confirm…
+      ui/                Avatar, StatusIcon, Modal, Menu, Toasts, Switch
 ```
+
+### Frontend data flow
+
+1. **Bootstrap:** after sign-in the app loads `/conversations` and `/contacts` into the Zustand store, then opens the WebSocket.
+2. **Server events** go through a single reducer (`applyEvent` in `store/chat.ts`). Components subscribe to small slices of the store, so a typing event only re-renders what shows typing.
+3. **Sending is optimistic:** the message appears immediately as *sending* with a client-generated `client_id`. The REST response and the socket echo are matched by that id, and status only ever moves forward (sent → delivered → read), so out-of-order events can't regress a tick.
+4. **Read receipts:** opening a chat, or a message arriving while the chat is visible, sends a `read` event over the socket (falling back to REST if the socket is down).
+5. **Reconnects:** the socket reconnects with exponential backoff and re-fetches the chat list and the open chat to catch anything missed while offline.
+
+## Deployment
+
+**Backend → Render** (free web service). The repo includes a `render.yaml` blueprint:
+1. New → Blueprint → select this repo. It builds `backend/` and starts `uvicorn app.main:app`.
+2. Set `CORS_ORIGINS` to your Vercel URL (e.g. `https://signal-clone.vercel.app`). Vercel preview URLs are already allowed by `CORS_ORIGIN_REGEX`.
+
+**Frontend → Vercel:**
+1. Import the repo and set **Root Directory** to `frontend`.
+2. Add the environment variable `NEXT_PUBLIC_API_URL=https://<your-render-service>.onrender.com`.
+
+Render's free tier sleeps after inactivity, and the first request takes about 50 seconds to wake it. The disk is ephemeral, so the demo data is re-seeded on each restart.
 
 ## Assumptions and mocks
 

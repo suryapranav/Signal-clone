@@ -62,11 +62,11 @@ def create_message(
     db.add(msg)
     db.flush()
     if kind == "text":  # system events don't need receipts or count as unread
-        db.add_all(
-            MessageReceipt(message_id=msg.id, user_id=m.user_id)
-            for m in conv.active_members
-            if m.user_id != sender_id
-        )
+        for m in conv.active_members:
+            if m.user_id != sender_id:
+                db.add(MessageReceipt(message_id=msg.id, user_id=m.user_id))
+                if not m.is_muted:
+                    m.is_archived = False  # a new message brings archived chats back
     conv.last_activity_at = now
     db.commit()
     return msg
