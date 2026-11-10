@@ -34,6 +34,7 @@
   --quote-bar: #2251e7;
   --quote-ink: #1b1b1b;
   --quote-x: #687492;
+  --tombstone-border: #b9b9b9; /* outline of a "deleted this message" pill */
 }
 
 :root[data-theme="dark"] {
@@ -64,6 +65,7 @@
   --quote-bar: #2251e7;
   --quote-ink: #ffffff;
   --quote-x: #102259;
+  --tombstone-border: #5e5e5e;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -95,6 +97,7 @@
   --quote-bar: #2251e7;
   --quote-ink: #ffffff;
   --quote-x: #102259;
+  --tombstone-border: #5e5e5e;
   }
 }
 

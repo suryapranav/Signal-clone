@@ -1,6 +1,6 @@
 "use client";
 
-import { Ban, Copy, Download, Ellipsis, FileText, Info, Pencil, Reply, SmilePlus, Timer, Trash2 } from "lucide-react";
+import { CircleX, Copy, Download, Ellipsis, FileText, Info, Pencil, Reply, SmilePlus, Timer, Trash2 } from "lucide-react";
 import { memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { fileUrl } from "@/lib/api";
 import { avatarColor } from "@/lib/colors";
@@ -352,16 +352,21 @@ export const MessageBubble = memo(function MessageBubble({ msg, ctx, isGroup, ca
   );
 
   if (deleted) {
-    // Signal keeps a placeholder where a message deleted for everyone used to be.
+    // Signal keeps an outlined pill where a message deleted for everyone used to be.
     return (
       <div id={`msg-${msg.id}`} className={cx("flex px-3 md:px-4", mine ? "justify-end" : "justify-start", first ? "mt-2.5" : "mt-0.5")}>
         {!mine && isGroup && <div className="w-7 shrink-0" />}
-        <div className={cx("flex items-end gap-2 border border-line px-3 py-2 text-ink-2", radius, !mine && isGroup && "ml-1.5")}>
-          <p className="flex items-center gap-1.5 text-body italic">
-            <Ban size={14} aria-hidden />
-            {mine ? "You deleted this message." : "This message was deleted."}
+        <div
+          className={cx(
+            "flex items-end gap-3 rounded-[18px] border border-[var(--tombstone-border)] py-2 pl-3 pr-3.5 text-ink-2",
+            !mine && isGroup && "ml-1.5",
+          )}
+        >
+          <p className="flex items-center gap-1.5 text-body">
+            <CircleX size={16} strokeWidth={1.75} className="shrink-0" aria-hidden />
+            {mine ? "You deleted this message" : `${userName(ctx, msg.sender_id)} deleted this message`}
           </p>
-          <span className="translate-y-[3px] text-[11px] leading-4 text-ink-3">{bubbleTime(msg.created_at, now)}</span>
+          <span className="translate-y-[3px] text-[11px] leading-4">{bubbleTime(msg.created_at, now)}</span>
         </div>
       </div>
     );

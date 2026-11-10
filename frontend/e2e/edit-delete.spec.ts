@@ -1,6 +1,6 @@
 import { test, expect } from "./fixtures";
 import type { Page } from "@playwright/test";
-import { chatRow, messageRow, send, signIn, unique } from "./helpers";
+import { chatRow, history, messageRow, send, signIn, unique } from "./helpers";
 
 const tab = (page: Page, name: string) => page.getByRole("navigation", { name: "Main" }).getByRole("button", { name, exact: true });
 const settingsPage = (page: Page, name: string) => page.getByRole("complementary").getByRole("button", { name, exact: true });
@@ -39,8 +39,8 @@ test("edit a message and delete it for everyone, live on both sides", async ({ b
   await alice.getByRole("menuitem", { name: "Delete for everyone" }).click();
   await alice.getByRole("dialog").getByRole("button", { name: "Delete" }).click();
 
-  await expect(alice.getByText("You deleted this message.")).toBeVisible();
-  await expect(bob.getByText("This message was deleted.")).toBeVisible();
+  await expect(history(alice).getByText("You deleted this message")).toBeVisible();
+  await expect(history(bob).getByText("Alice Chen deleted this message")).toBeVisible();
   await expect(messageRow(bob, edited)).toHaveCount(0);
   await expect(chatRow(bob, "Alice Chen")).toContainText("This message was deleted");
 
