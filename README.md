@@ -340,6 +340,7 @@ GitHub Actions (`.github/workflows/ci.yml`) runs four jobs on every push:
 
 **Backend → Render** (free web service). The repo includes a `render.yaml` blueprint:
 1. New → Blueprint → select this repo. It builds `backend/` and starts `uvicorn app.main:app`.
+   Python is pinned to 3.12 (`.python-version`, plus `PYTHON_VERSION` in `render.yaml`): Render's default is now 3.14, and the pinned pydantic has no prebuilt package for it yet, so the build would try to compile it from Rust and fail.
 2. Any `*.vercel.app` frontend is already allowed by `CORS_ORIGIN_REGEX`. For a custom domain, add it to `CORS_ORIGINS`.
 
 **Frontend → Vercel:**
