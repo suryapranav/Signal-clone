@@ -6,7 +6,9 @@ A functional clone of the Signal messenger: phone-number onboarding, contacts, 1
 - **Backend:** FastAPI, SQLAlchemy 2.0, SQLite
 - **Real-time:** a single WebSocket per client (FastAPI / Starlette)
 
-> Live demo: _TBD_ · API docs: `<backend-url>/docs`
+> **Live demo:** https://signal-clone-self.vercel.app · **API docs:** https://signal-clone-api-rcv0.onrender.com/docs
+>
+> The backend runs on Render's free tier, so the first request after a while may take ~50 seconds to wake it up.
 
 ## Features
 
