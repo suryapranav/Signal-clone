@@ -1,7 +1,7 @@
 "use client";
 
 import { Download, FileText, Reply, SmilePlus, Timer } from "lucide-react";
-import { memo, useEffect, useRef, useState, type ReactNode } from "react";
+import { memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { fileUrl } from "@/lib/api";
 import { avatarColor } from "@/lib/colors";
 import { formatBytes } from "@/lib/files";
@@ -32,15 +32,41 @@ function isJumbomoji(text: string): boolean {
   return count <= 3;
 }
 
+const EDGE = 8; // keep the picker this far from the message list's edges
+
 function ReactionPicker({ onPick, onClose, mine }: { onPick: (e: string) => void; onClose: () => void; mine?: string }) {
   const ref = useRef<HTMLDivElement>(null);
+  const [place, setPlace] = useState({ dx: 0, below: false });
+
   useEffect(() => {
-    const close = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && onClose();
-    document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
+    const close = (e: PointerEvent) => !ref.current?.contains(e.target as Node) && onClose();
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
   }, [onClose]);
+
+  // Measure before paint and keep the picker inside the message list, which
+  // clips anything outside it. On a phone there's rarely room beside a bubble,
+  // so it slides sideways, and flips below the message near the top.
+  useLayoutEffect(() => {
+    const el = ref.current;
+    const bounds = el?.closest("[role=log]")?.getBoundingClientRect();
+    if (!el || !bounds) return;
+    const r = el.getBoundingClientRect();
+    let dx = 0;
+    if (r.right > bounds.right - EDGE) dx = bounds.right - EDGE - r.right;
+    if (r.left + dx < bounds.left + EDGE) dx = bounds.left + EDGE - r.left;
+    setPlace({ dx, below: r.top < bounds.top + EDGE });
+  }, []);
+
   return (
-    <div ref={ref} className="absolute bottom-full z-30 mb-2 flex animate-pop-in gap-0.5 rounded-full bg-pane p-1 shadow-pop" role="menu" aria-label="React">
+    <div
+      ref={ref}
+      className={cx("absolute z-30 flex animate-pop-in gap-0.5 rounded-full bg-pane p-1 shadow-pop", place.below ? "top-full mt-2" : "bottom-full mb-2")}
+      // `translate` (not `transform`) so it doesn't fight the pop-in animation's scale.
+      style={{ translate: `${place.dx}px 0` }}
+      role="menu"
+      aria-label="React"
+    >
       {QUICK_REACTIONS.map((e) => (
         <button
           key={e}
@@ -181,6 +207,23 @@ export const MessageBubble = memo(function MessageBubble({ msg, ctx, isGroup, ca
   const imageOnly = !!att?.is_image && !msg.body && !msg.reply_to && !showName;
   const jumbo = !msg.reply_to && !att && isJumbomoji(msg.body);
   const interactive = canInteract && msg.id > 0;
+  // Touch screens have no hover: a long press opens reactions, as in Signal's mobile app.
+  const longPress = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const touch = interactive
+    ? {
+        onTouchStart: () => {
+          longPress.current = setTimeout(() => {
+            setPicker(true);
+            navigator.vibrate?.(10);
+          }, 450);
+        },
+        onTouchEnd: () => clearTimeout(longPress.current),
+        onTouchMove: () => clearTimeout(longPress.current),
+        onContextMenu: (e: React.MouseEvent) => {
+          if (window.matchMedia("(pointer: coarse)").matches) e.preventDefault();
+        },
+      }
+    : {};
   const myReaction = msg.reactions.find((r) => r.user_id === ctx.meId)?.emoji;
 
   const radius = mine
@@ -243,8 +286,9 @@ export const MessageBubble = memo(function MessageBubble({ msg, ctx, isGroup, ca
       {mine && actions}
       <div className={cx("flex min-w-0 max-w-[min(78%,520px)] flex-col", mine ? "items-end" : "items-start")}>
         <div
+          {...touch}
           className={cx(
-            "w-fit max-w-full",
+            "w-fit max-w-full [-webkit-touch-callout:none]",
             jumbo ? "px-1" : cx(imageOnly ? "p-[3px]" : "px-3 py-[7px]", radius, mine ? "bg-accent text-white" : "bg-bubble-in text-ink"),
             failed && "opacity-70",
           )}
