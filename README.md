@@ -1,5 +1,7 @@
 # Signal Clone
 
+[![CI](https://github.com/suryapranav/Signal-clone/actions/workflows/ci.yml/badge.svg)](https://github.com/suryapranav/Signal-clone/actions/workflows/ci.yml)
+
 A functional clone of the Signal messenger: phone-number onboarding, contacts, 1:1 and group chats, and real-time messaging with sent / delivered / read receipts, typing indicators and presence.
 
 - **Frontend:** Next.js 15 (App Router, TypeScript), Tailwind CSS, Zustand
@@ -21,6 +23,7 @@ A functional clone of the Signal messenger: phone-number onboarding, contacts, 1
 - **Signal experience:** nav rail with Chats, Calls and Stories; three-pane layout; grouped message bubbles with sender names and avatars in groups; date separators; conversation header with presence or last seen; chat and group settings pages; modals; toasts; settings pages (profile, appearance, chats, notifications, privacy, linked devices).
 
 **Bonus**
+- Attachments: images and files up to 5 MB, added with the paperclip, by pasting, or by dragging onto the chat. Photos show inline with a full-screen viewer; files show as download cards. Uploads are optimistic and show a local preview immediately.
 - Emoji reactions (Signal's six quick reactions; one per person; tap a reaction to toggle it)
 - Reply-to with quoted messages (click a quote to jump to the original)
 - Disappearing messages that actually work (per-chat timer; messages count down and are deleted on the server)
@@ -29,7 +32,7 @@ A functional clone of the Signal messenger: phone-number onboarding, contacts, 1
 - Keyboard shortcuts: `Ctrl/⌘ K` search · `Ctrl/⌘ Alt N` new chat · `Alt ↑/↓` switch chats · `Esc` cancel reply or close panel · `Ctrl/⌘ /` list all shortcuts
 - Jumbo emoji, emoji picker, per-chat drafts, unread count in the tab title, and in-app message notifications
 
-**Placeholders ("Coming soon"):** voice and video calls, Stories, linked devices, attachments and voice notes.
+**Placeholders ("Coming soon"):** voice and video calls, Stories, linked devices, and voice notes.
 
 ## Demo accounts
 
@@ -37,7 +40,7 @@ Every number uses the verification code **`123456`** (verification is mocked).
 
 | Name | Phone | Notes |
 |---|---|---|
-| Alice Chen | +1 555 010 0001 | Most seeded chats, admin of "Weekend Hike" |
+| Alice Chen | +1 555 010 0001 | Most seeded chats, admin of "Weekend Hike" (which has a photo and a file) |
 | Bob Martinez | +1 555 010 0002 | |
 | Priya Sharma | +1 555 010 0003 | Admin of "Product Team" |
 | Diego Alvarez | +1 555 010 0006 | |
@@ -116,6 +119,8 @@ erDiagram
     messages ||--o{ reactions : has
     users ||--o{ reactions : gives
     messages |o--o{ messages : "replies to"
+    messages |o--o| attachments : carries
+    users ||--o{ attachments : uploads
 
     users {
         int id PK
@@ -182,6 +187,18 @@ erDiagram
         int user_id PK,FK
         string emoji
     }
+    attachments {
+        int id PK
+        string key UK "random token used in the download URL"
+        int uploader_id FK
+        int message_id FK,UK "NULL until sent"
+        string filename
+        string content_type
+        int size
+        int width "images only"
+        int height "images only"
+        blob data "deferred: never loaded when listing messages"
+    }
 ```
 
 ### Design decisions
@@ -192,7 +209,8 @@ erDiagram
 - **Unread count = receipts with `read_at IS NULL`.** Status and unread badges come from the same table, so they can't drift apart. The `(user_id, read_at)` index keeps the query cheap.
 - **System messages** ("Alice added Bob") are rows with `kind = 'system'`, an event key in `body` and details in `meta`. The client renders them from the viewer's perspective ("You added Bob" vs "Alice added Bob").
 - **Only a hash of the session token is stored**, so a leaked database doesn't leak working sessions. Logout deletes the session row.
-- **Foreign keys are enforced** (`PRAGMA foreign_keys=ON`) with explicit `ON DELETE` behaviour: receipts and reactions cascade with their message, and replies keep existing with `reply_to_id` set to NULL.
+- **Attachments are uploaded first and linked when the message is sent.** Only the uploader can attach a file, and only once (`message_id` is UNIQUE). The bytes live in a deferred BLOB column, so message lists never load file contents. Image width and height are stored so the client can reserve space before the image loads, which keeps the chat from jumping.
+- **Foreign keys are enforced** (`PRAGMA foreign_keys=ON`) with explicit `ON DELETE` behaviour: receipts, reactions and attachments cascade with their message, and replies keep existing with `reply_to_id` set to NULL.
 
 ## API overview
 
@@ -218,9 +236,13 @@ All endpoints are under `/api` and take `Authorization: Bearer <token>`, except 
 | DELETE | `/conversations/{id}/members/{user_id}` | Remove a member (admin), or leave (yourself) |
 | PATCH | `/conversations/{id}/members/{user_id}` | Make or revoke admin (admin) |
 | GET | `/conversations/{id}/messages?before_id=` | Paginated history, oldest first |
-| POST | `/conversations/{id}/messages` | Send `{body, client_id, reply_to_id?}` |
+| POST | `/conversations/{id}/messages` | Send `{body, client_id, reply_to_id?, attachment_id?}` (body may be empty if there's an attachment) |
+| POST | `/attachments` | Upload a file (multipart, max 5 MB) → `{id, url, …}` to use as `attachment_id` |
+| GET | `/attachments/{key}` | Download a sent attachment (see note below) |
 | PUT / DELETE | `/messages/{id}/reaction` | Set or remove your emoji reaction |
 | WS | `/ws?token=` | Real-time events (see below) |
+
+**Attachment downloads** use a random, unguessable key in the URL instead of the bearer token, because `<img>` tags can't send an `Authorization` header (the same idea as an S3 presigned URL). Only JPEG, PNG, GIF and WebP render inline. Everything else, including SVG and HTML, is served as a download with `nosniff` and a sandbox CSP, so an uploaded file can't run scripts on the API's origin.
 
 **Server → client events:** `message.new`, `message.status`, `message.reactions`, `message.deleted`, `conversation.updated`, `conversation.read`, `typing`, `presence`, `user.updated`.
 **Client → server events:** `typing`, `read`, `ping`.
@@ -238,7 +260,8 @@ backend/
     security.py          session tokens, current-user dependency
     realtime.py          WebSocket connection registry
     seed.py              demo data
-    routers/             auth, users, contacts, conversations, messages, ws
+    seed_assets.py       generated demo photo and file (no binaries in the repo)
+    routers/             auth, users, contacts, conversations, messages, attachments, ws
     services/
       conversations.py   membership and admin rules
       messaging.py       message creation, receipts, event fan-out
@@ -255,6 +278,7 @@ frontend/
       names.ts           display names, chat titles, system-message text
       format.ts          Signal-style timestamps and timer labels
       colors.ts          Signal avatar palette
+      files.ts           attachment validation, image measuring, labels
     store/
       chat.ts            Zustand store: users, chats, threads, typing + event reducer
       ui.ts              navigation, modals, toasts, theme
@@ -279,11 +303,15 @@ frontend/
 4. **Read receipts:** opening a chat, or a message arriving while the chat is visible, sends a `read` event over the socket (falling back to REST if the socket is down).
 5. **Reconnects:** the socket reconnects with exponential backoff and re-fetches the chat list and the open chat to catch anything missed while offline.
 
+## Continuous integration
+
+GitHub Actions (`.github/workflows/ci.yml`) runs on every push: the backend test suite (REST and WebSocket flows, attachments, group admin, disappearing messages), and the frontend lint, typecheck and production build.
+
 ## Deployment
 
 **Backend → Render** (free web service). The repo includes a `render.yaml` blueprint:
 1. New → Blueprint → select this repo. It builds `backend/` and starts `uvicorn app.main:app`.
-2. Set `CORS_ORIGINS` to your Vercel URL (e.g. `https://signal-clone.vercel.app`). Vercel preview URLs are already allowed by `CORS_ORIGIN_REGEX`.
+2. Any `*.vercel.app` frontend is already allowed by `CORS_ORIGIN_REGEX`. For a custom domain, add it to `CORS_ORIGINS`.
 
 **Frontend → Vercel:**
 1. Import the repo and set **Root Directory** to `frontend`.
@@ -297,6 +325,19 @@ Render's free tier sleeps after inactivity, and the first request takes about 50
 - **End-to-end encryption is simulated:** messages are stored in plain text. The UI shows Signal's encryption notices and a safety-number screen for look and feel only.
 - **Calls, Stories and Linked devices** are "Coming soon" placeholders.
 - **Online / last seen** is real for connected users (based on open sockets); seeded users who never connect show a seeded "last seen" time.
-- **Profile photos** are stored as data URLs in the database (max ~400 KB), which keeps deployment to a single service with no file storage.
+- **Profile photos and attachments are stored in SQLite** (photos as data URLs up to ~400 KB, attachments as BLOBs up to 5 MB, one per message). This keeps deployment to a single service with no file storage.
 - **Single backend instance:** the WebSocket registry is in memory. On free hosting tiers the SQLite file is ephemeral, so the demo re-seeds itself on every deploy or restart.
 - **Disappearing timers start when a message is sent** (Signal starts them when the message is read), which keeps the logic server-side and deterministic.
+
+## What I'd do next
+
+This demo deliberately trades scale and real cryptography for simplicity. For production:
+
+- **Real end-to-end encryption.** Use the Signal Protocol: X3DH (or PQXDH) to agree on keys from published prekey bundles, then the Double Ratchet for per-message keys with forward secrecy. The server would only store and relay ciphertext plus prekeys, so read receipts, typing and reactions would also travel as encrypted messages. Groups would use sender keys. The safety-number screen would compare real identity-key fingerprints.
+- **Horizontal scaling.** Replace the in-memory `ConnectionManager` with Redis pub/sub (or NATS) behind the same `send_to_users` interface, so any API instance can reach any user's socket. Sticky sessions are then not required.
+- **Postgres instead of SQLite**, with Alembic migrations, an async driver, and partitioning or archiving for `messages` and `message_receipts`, which grow as messages × recipients.
+- **Object storage for attachments** (S3 or R2) with presigned, expiring upload and download URLs, image thumbnails, and virus scanning, instead of BLOBs in the database.
+- **Delivery when the app is closed:** web push / APNs / FCM for offline users, and multi-device sync with per-device receipts.
+- **Abuse and safety:** rate limits on OTP and sending, real SMS verification, message requests for unknown senders, and blocking and reporting.
+- **More tests:** Playwright end-to-end tests in CI (this project was checked with two-user Playwright runs locally) and load tests for the WebSocket fan-out.
+
