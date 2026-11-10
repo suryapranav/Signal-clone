@@ -233,7 +233,7 @@ export function Composer({ conv, ctx }: { conv: Conversation; ctx: NameContext }
           {emojiOpen && <EmojiPicker onPick={insertEmoji} onClose={() => setEmojiOpen(false)} />}
         </div>
 
-        <div className="min-w-0 flex-1 rounded-[18px] bg-bubble-in">
+        <div className="min-w-0 flex-1 rounded-[18px] border border-transparent bg-bubble-in focus-within:border-[var(--composer-focus)]">
           {pending && !editing && <PendingFile file={pending.file} onRemove={() => setPendingFile(null)} />}
           <textarea
             ref={input}
@@ -277,7 +277,14 @@ export function Composer({ conv, ctx }: { conv: Conversation; ctx: NameContext }
             <Check size={18} />
           </button>
         ) : canSend ? (
-          <button key="send" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent text-white hover:bg-accent-hover" onClick={submit} aria-label="Send" title="Send (Enter)">
+          // Signal Desktop has no send button (Enter sends); its phone app does, so show one only on narrow screens.
+          <button
+            key="send"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent text-white hover:bg-accent-hover md:hidden"
+            onClick={submit}
+            aria-label="Send"
+            title="Send (Enter)"
+          >
             <SendHorizontal size={18} />
           </button>
         ) : (

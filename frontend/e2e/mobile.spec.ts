@@ -39,6 +39,12 @@ test("phone layout: one pane at a time, and the reaction picker stays on screen"
   expect(menuBox.x + menuBox.width).toBeLessThanOrEqual(bob.viewportSize()!.width);
   await bob.keyboard.press("Escape");
 
+  // On a phone there is a send button, as in Signal's mobile app.
+  const text = `Sent from my phone ${Date.now().toString(36)}`;
+  await bob.getByLabel("Message", { exact: true }).fill(text);
+  await bob.getByRole("button", { name: "Send" }).tap();
+  await expect(messageRow(bob, text)).toBeVisible();
+
   // Back returns to the list.
   await bob.getByLabel("Back to chats").tap();
   await expect(bob.getByRole("heading", { name: "Chats" })).toBeVisible();

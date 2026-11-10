@@ -24,7 +24,8 @@ test("photos and files are uploaded, delivered live and downloadable", async ({ 
   // A file with no text is a download link, and the chat list names it.
   const fileName = `${unique("notes").replace(" ", "-")}.txt`;
   await bob.getByLabel("Choose file").setInputFiles({ name: fileName, mimeType: "text/plain", buffer: Buffer.from("meeting notes\n") });
-  await bob.getByLabel("Send").click();
+  await expect(bob.getByRole("button", { name: "Send" })).toBeHidden(); // Signal Desktop: Enter sends, no button
+  await bob.getByLabel("Message", { exact: true }).press("Enter");
   const link = history(alice).locator("a", { hasText: fileName });
   await expect(link).toBeVisible();
   expect(await link.getAttribute("href")).toContain("/api/attachments/");
