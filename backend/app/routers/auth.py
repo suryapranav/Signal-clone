@@ -42,7 +42,7 @@ def verify_otp(body: VerifyOtpIn, db: Session = Depends(get_db)):
         db.commit()
 
     token = issue_session(db, user)
-    return AuthOut(token=token, user=user_out(user), needs_profile=not user.display_name)
+    return AuthOut(token=token, user=user_out(user, is_self=True), needs_profile=not user.display_name)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)

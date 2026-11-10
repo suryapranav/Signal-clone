@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
-from .database import Base, SessionLocal, engine
+from .database import Base, SessionLocal, add_missing_columns, engine
 from .routers import attachments, auth, contacts, conversations, messages, users, ws
 from .seed import seed_if_empty
 from .services.messaging import purge_expired
@@ -33,6 +33,7 @@ async def _purge_loop() -> None:
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     Base.metadata.create_all(engine)
+    add_missing_columns()
     if settings.seed_on_startup:
         with SessionLocal() as db:
             seed_if_empty(db)

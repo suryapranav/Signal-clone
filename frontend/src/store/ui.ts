@@ -42,6 +42,8 @@ interface UIState {
   theme: Theme;
   /** Message being replied to in the open conversation. */
   replyTo: Message | null;
+  /** Own message being edited in the composer (replaces replying). */
+  editing: Message | null;
   /** Message to scroll to and highlight (from clicking a quote). */
   focusMessageId: number | null;
   /** Open settings page; null = the section list (on mobile). */
@@ -62,6 +64,7 @@ interface UIState {
   dismissToast(id: string): void;
   setTheme(theme: Theme): void;
   setReplyTo(message: Message | null): void;
+  setEditing(message: Message | null): void;
   focusMessage(id: number | null): void;
   setSettingsSection(section: SettingsSection | null): void;
   setPendingFile(pending: { convId: number; file: OutgoingFile } | null): void;
@@ -95,6 +98,7 @@ const initial = {
   modal: null,
   toasts: [],
   replyTo: null,
+  editing: null,
   focusMessageId: null,
   settingsSection: null as SettingsSection | null,
   pendingFile: null,
@@ -135,7 +139,8 @@ export const useUI = create<UIState>((set, get) => ({
     set({ theme });
   },
 
-  setReplyTo: (replyTo) => set({ replyTo }),
+  setReplyTo: (replyTo) => set(replyTo ? { replyTo, editing: null } : { replyTo }),
+  setEditing: (editing) => set(editing ? { editing, replyTo: null } : { editing }),
   focusMessage: (focusMessageId) => set({ focusMessageId }),
   setSettingsSection: (settingsSection) => set({ settingsSection }),
   setPendingFile: (pendingFile) => set({ pendingFile }),

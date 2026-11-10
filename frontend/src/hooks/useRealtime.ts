@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { conversationTitle, firstName, messageSummary } from "@/lib/names";
 import { getPref } from "@/lib/prefs";
 import { realtime } from "@/lib/socket";
+import { playChime } from "@/lib/sound";
 import type { ServerEvent } from "@/lib/types";
 import { useChat } from "@/store/chat";
 import { toast, useUI } from "@/store/ui";
@@ -18,8 +19,11 @@ function maybeNotify(event: ServerEvent) {
   if (viewing) return;
   const ctx = { meId: s.me.id, users: s.users, nicknames: s.nicknames };
   const who = conv.kind === "group" ? `${firstName(ctx, msg.sender_id)} in ${conversationTitle(ctx, conv)}` : conversationTitle(ctx, conv);
-  const body = getPref("notify-preview", true) ? (messageSummary(msg).length > 60 ? messageSummary(msg).slice(0, 60) + "…" : messageSummary(msg)) : "New message";
-  toast(`${who}: ${body}`, {
+  const summary = messageSummary(msg);
+  // "Show name and message" off: just say a message arrived.
+  const text = getPref("notify-preview", true) ? `${who}: ${summary.length > 60 ? summary.slice(0, 60) + "…" : summary}` : "New message";
+  if (getPref("notify-sound", true)) playChime();
+  toast(text, {
     action: {
       label: "View",
       onClick: () => {

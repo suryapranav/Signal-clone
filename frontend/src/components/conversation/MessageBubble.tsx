@@ -1,6 +1,6 @@
 "use client";
 
-import { Copy, Download, Ellipsis, FileText, Info, Reply, SmilePlus, Timer } from "lucide-react";
+import { Ban, Copy, Download, Ellipsis, FileText, Info, Pencil, Reply, SmilePlus, Timer, Trash2 } from "lucide-react";
 import { memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { fileUrl } from "@/lib/api";
 import { avatarColor } from "@/lib/colors";
@@ -32,6 +32,9 @@ function isJumbomoji(text: string): boolean {
   const count = segmenter ? [...segmenter.segment(t.replace(/\s/g, ""))].length : t.length;
   return count <= 3;
 }
+
+/** You can edit or delete a message for everyone for this long after sending (the server enforces it too). */
+const CHANGE_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 const EDGE = 8; // keep the picker this far from the message list's edges
 
@@ -211,6 +214,8 @@ export const MessageBubble = memo(function MessageBubble({ msg, ctx, isGroup, ca
   const mine = msg.sender_id === ctx.meId;
   const [picker, setPicker] = useState(false);
   const setReplyTo = useUI((s) => s.setReplyTo);
+  const setEditing = useUI((s) => s.setEditing);
+  const deleteForEveryone = useChat((s) => s.deleteForEveryone);
   const retry = useChat((s) => s.retry);
   const toggleReaction = useChat((s) => s.toggleReaction);
   const sender = ctx.users[msg.sender_id ?? -1];
@@ -220,7 +225,9 @@ export const MessageBubble = memo(function MessageBubble({ msg, ctx, isGroup, ca
   const showName = !mine && isGroup && first && !!sender;
   const imageOnly = !!att?.is_image && !msg.body && !msg.reply_to && !showName;
   const jumbo = !msg.reply_to && !att && isJumbomoji(msg.body);
-  const interactive = canInteract && msg.id > 0;
+  const deleted = !!msg.deleted_at;
+  const interactive = canInteract && msg.id > 0 && !deleted;
+  const changeable = mine && interactive && now - new Date(msg.created_at).getTime() < CHANGE_WINDOW_MS;
   // Touch screens have no hover: a long press opens reactions, as in Signal's mobile app.
   const longPress = useRef<ReturnType<typeof setTimeout>>(undefined);
   const touch = interactive
@@ -293,7 +300,23 @@ export const MessageBubble = memo(function MessageBubble({ msg, ctx, isGroup, ca
                 () => toast("Couldn't copy", { tone: "error" }),
               ),
           },
+          { label: "Edit", icon: <Pencil />, hidden: !changeable, onSelect: () => setEditing(msg) },
           { label: "Message details", icon: <Info />, onSelect: () => openModal({ kind: "message-info", messageId: msg.id }) },
+          {
+            label: "Delete for everyone",
+            icon: <Trash2 />,
+            danger: true,
+            hidden: !changeable,
+            onSelect: () =>
+              openModal({
+                kind: "confirm",
+                title: "Delete for everyone?",
+                body: "This message will be deleted for everyone in the chat. They'll see that a message was deleted.",
+                confirmLabel: "Delete",
+                danger: true,
+                onConfirm: () => deleteForEveryone(msg),
+              }),
+          },
         ]}
       />
       {picker && (
@@ -326,10 +349,27 @@ export const MessageBubble = memo(function MessageBubble({ msg, ctx, isGroup, ca
           {remaining(msg.expires_at, now)}
         </span>
       )}
+      {msg.edited_at && !deleted && <span title={`Edited ${new Date(msg.edited_at).toLocaleString()}`}>Edited</span>}
       <span>{bubbleTime(msg.created_at, now)}</span>
-      {mine && !failed && <StatusIcon status={status} />}
+      {mine && !failed && !deleted && <StatusIcon status={status} />}
     </span>
   );
+
+  if (deleted) {
+    // Signal keeps a placeholder where a message deleted for everyone used to be.
+    return (
+      <div id={`msg-${msg.id}`} className={cx("flex px-3 md:px-4", mine ? "justify-end" : "justify-start", first ? "mt-2.5" : "mt-0.5")}>
+        {!mine && isGroup && <div className="w-7 shrink-0" />}
+        <div className={cx("flex items-end gap-2 border border-line px-3 py-2 text-ink-2", radius, !mine && isGroup && "ml-1.5")}>
+          <p className="flex items-center gap-1.5 text-body italic">
+            <Ban size={14} aria-hidden />
+            {mine ? "You deleted this message." : "This message was deleted."}
+          </p>
+          <span className="translate-y-[3px] text-[11px] leading-4 text-ink-3">{bubbleTime(msg.created_at, now)}</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div

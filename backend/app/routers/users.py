@@ -26,7 +26,7 @@ def find_user(db: Session, query: str) -> User | None:
 
 @router.get("/me", response_model=UserOut)
 def get_me(me: User = Depends(current_user)):
-    return user_out(me)
+    return user_out(me, is_self=True)
 
 
 @router.patch("/me", response_model=UserOut)
@@ -47,7 +47,7 @@ async def update_me(body: ProfileUpdateIn, me: User = Depends(current_user), db:
         setattr(me, field, value)
     db.commit()
     await publish_user(db, me)
-    return user_out(me)
+    return user_out(me, is_self=True)
 
 
 @router.get("/lookup", response_model=UserOut)

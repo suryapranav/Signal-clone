@@ -78,7 +78,7 @@ export const api = {
 
   // profile & users
   me: () => request<User>("GET", "/users/me"),
-  updateMe: (patch: Partial<Pick<User, "display_name" | "about" | "avatar_color" | "avatar_url" | "username">>) =>
+  updateMe: (patch: Partial<Pick<User, "display_name" | "about" | "avatar_color" | "avatar_url" | "username" | "read_receipts">>) =>
     request<User>("PATCH", "/users/me", patch),
   lookupUser: (q: string) => request<User>("GET", `/users/lookup?q=${encodeURIComponent(q)}`),
 
@@ -126,6 +126,8 @@ export const api = {
     return request<Attachment>("POST", "/attachments", form);
   },
   messageInfo: (messageId: number) => request<MessageInfo>("GET", `/messages/${messageId}/info`),
+  editMessage: (messageId: number, body: string) => request<Message>("PATCH", `/messages/${messageId}`, { body }),
+  deleteForEveryone: (messageId: number) => request<Message>("DELETE", `/messages/${messageId}`),
   react: (messageId: number, emoji: string) => request<void>("PUT", `/messages/${messageId}/reaction`, { emoji }),
   unreact: (messageId: number) => request<void>("DELETE", `/messages/${messageId}/reaction`),
 };

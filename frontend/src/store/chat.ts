@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { api, ApiError } from "@/lib/api";
+import { getPref } from "@/lib/prefs";
 import { realtime, type ConnectionState } from "@/lib/socket";
 import type { Attachment, Contact, Conversation, Message, MessageStatus, ServerEvent, User } from "@/lib/types";
 import { uid } from "@/lib/utils";
@@ -56,6 +57,8 @@ interface ChatState {
   retry(convId: number, clientId: string): Promise<void>;
   markRead(convId: number): void;
   toggleReaction(message: Message, emoji: string): Promise<void>;
+  editMessage(message: Message, body: string): Promise<boolean>;
+  deleteForEveryone(message: Message): Promise<void>;
   applyEvent(event: ServerEvent): void;
   pruneTyping(): void;
 }
@@ -184,6 +187,27 @@ export const useChat = create<ChatState>((set, get) => {
         conversations:
           conv && conv.last_message?.id === id
             ? { ...s.conversations, [convId]: { ...conv, last_message: patch(conv.last_message) } }
+            : s.conversations,
+      };
+    });
+  }
+
+  /** An edited or deleted message: replace it, and refresh any quotes of it. */
+  function applyMessageUpdate(msg: Message) {
+    const quote = (m: UIMessage): UIMessage =>
+      m.reply_to?.id === msg.id
+        ? { ...m, reply_to: { ...m.reply_to, body: msg.body, attachment: msg.attachment, deleted: !!msg.deleted_at } }
+        : m;
+    set((s) => {
+      const conv = s.conversations[msg.conversation_id];
+      const thread = s.threads[msg.conversation_id];
+      const items = thread?.items.map((m) => (m.id === msg.id ? merge(m, msg) : quote(m)));
+      const last = conv?.last_message;
+      return {
+        threads: thread && items ? { ...s.threads, [msg.conversation_id]: { ...thread, items } } : s.threads,
+        conversations:
+          conv && last
+            ? { ...s.conversations, [conv.id]: { ...conv, last_message: last.id === msg.id ? merge(last, msg) : quote(last) } }
             : s.conversations,
       };
     });
@@ -367,6 +391,24 @@ export const useChat = create<ChatState>((set, get) => {
       await (removing ? api.unreact(message.id) : api.react(message.id, emoji));
     },
 
+    editMessage: async (message, body) => {
+      try {
+        applyMessageUpdate(await api.editMessage(message.id, body));
+        return true;
+      } catch (e) {
+        toast(e instanceof ApiError ? e.message : "Couldn't edit the message", { tone: "error" });
+        return false;
+      }
+    },
+
+    deleteForEveryone: async (message) => {
+      try {
+        applyMessageUpdate(await api.deleteForEveryone(message.id));
+      } catch (e) {
+        toast(e instanceof ApiError ? e.message : "Couldn't delete the message", { tone: "error" });
+      }
+    },
+
     applyEvent: (event) => {
       const s = get();
       switch (event.type) {
@@ -388,6 +430,9 @@ export const useChat = create<ChatState>((set, get) => {
         case "message.reactions":
           updateMessageEverywhere(event.conversation_id, event.message_id, (m) => ({ ...m, reactions: event.reactions }));
           return;
+        case "message.updated":
+          applyMessageUpdate(event.message);
+          return;
         case "message.deleted": {
           const ids = new Set(event.ids);
           const thread = s.threads[event.conversation_id];
@@ -407,6 +452,8 @@ export const useChat = create<ChatState>((set, get) => {
           return;
         }
         case "typing": {
+          // Typing indicators off (Settings → Privacy): you neither send nor see them, as in Signal.
+          if (!getPref("typing-indicators", true)) return;
           const forConv = { ...(s.typing[event.conversation_id] ?? {}) };
           if (event.is_typing) forConv[event.user_id] = Date.now() + 6000;
           else delete forConv[event.user_id];

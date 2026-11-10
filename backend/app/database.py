@@ -7,7 +7,9 @@ Runs on SQLite (local development, tests, zero-config demo) or Postgres
 from collections.abc import Iterator
 from datetime import datetime, timezone
 
-from sqlalchemy import create_engine, event
+import logging
+
+from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from .config import settings
@@ -49,6 +51,27 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False
 
 class Base(DeclarativeBase):
     pass
+
+
+def add_missing_columns() -> None:
+    """A minimal migration step for a schema that only grows: `create_all`
+    creates missing tables but never alters existing ones, so add any new
+    nullable column a table is missing (e.g. messages.edited_at on a database
+    created before that feature). Anything bigger would need Alembic."""
+    insp = inspect(engine)
+    with engine.begin() as conn:
+        for table in Base.metadata.sorted_tables:
+            if not insp.has_table(table.name):
+                continue
+            existing = {c["name"] for c in insp.get_columns(table.name)}
+            for col in table.columns:
+                if col.name in existing:
+                    continue
+                if not col.nullable:
+                    logging.getLogger("signal").warning("can't add NOT NULL column %s.%s", table.name, col.name)
+                    continue
+                col_type = col.type.compile(dialect=engine.dialect)
+                conn.execute(text(f'ALTER TABLE "{table.name}" ADD COLUMN "{col.name}" {col_type}'))
 
 
 def utcnow() -> datetime:

@@ -61,6 +61,10 @@ class User(Base):
     avatar_url: Mapped[str | None] = mapped_column(Text)  # data URL
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime)
+    # Privacy setting. When off, nobody sees "read" on messages this user
+    # receives, and this user doesn't see it on messages they send (as in
+    # Signal). NULL, for rows created before the setting existed, means on.
+    read_receipts: Mapped[bool | None] = mapped_column(Boolean, default=True)
 
     sessions: Mapped[list["AuthSession"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
@@ -187,6 +191,11 @@ class Message(Base):
     client_id: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime, index=True)
+    # Set when the sender edits the text (the body holds the latest version).
+    edited_at: Mapped[datetime | None] = mapped_column(DateTime)
+    # "Delete for everyone": the row stays as a tombstone so the chat shows
+    # "This message was deleted", but its text, file and reactions are removed.
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime)
 
     reply_to: Mapped["Message | None"] = relationship(remote_side=[id])
     attachment: Mapped["Attachment | None"] = relationship(

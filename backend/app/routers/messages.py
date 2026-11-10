@@ -1,19 +1,24 @@
-"""Message history, sending, and reactions."""
+"""Message history, sending, editing, deleting, and reactions."""
+
+from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, selectinload
 
-from ..database import get_db
+from ..database import get_db, utcnow
 from ..models import Attachment, ConversationMember, Message, MessageReceipt, Reaction, User
 from ..realtime import manager
-from ..schemas import MessageCreateIn, MessageInfoOut, MessageOut, MessagePage, ReactionIn, ReceiptOut
+from ..schemas import MessageCreateIn, MessageEditIn, MessageInfoOut, MessageOut, MessagePage, ReactionIn, ReceiptOut
 from ..security import current_user
 from ..services import conversations as svc
-from ..services.messaging import create_message, publish_message
-from ..services.serializers import message_out, messages_out, user_out, visible_window
+from ..services.messaging import create_message, publish_message, publish_message_update
+from ..services.serializers import message_out, messages_out, receipts_on, user_out, visible_window
 
 router = APIRouter(tags=["messages"])
+
+# How long after sending you can still edit or delete a message for everyone.
+CHANGE_WINDOW = timedelta(hours=24)
 
 
 @router.get("/conversations/{conv_id}/messages", response_model=MessagePage)
@@ -53,7 +58,7 @@ async def send_message(
     conv = membership.conversation
     if body.reply_to_id is not None:
         target = db.get(Message, body.reply_to_id)
-        if target is None or target.conversation_id != conv_id:
+        if target is None or target.conversation_id != conv_id or target.deleted_at is not None:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Can't reply to that message")
 
     attachment = None
@@ -92,10 +97,67 @@ def message_info(message_id: int, me: User = Depends(current_user), db: Session 
     )
     if msg.sender_id != me.id:
         q = q.where(MessageReceipt.user_id == me.id)
+    # Read times follow the read-receipts setting of both the reader and the sender.
+    sender_sees_reads = receipts_on(me.read_receipts) or msg.sender_id != me.id
     receipts = [
-        ReceiptOut(user=user_out(u), delivered_at=r.delivered_at, read_at=r.read_at) for r, u in db.execute(q).all()
+        ReceiptOut(
+            user=user_out(u),
+            delivered_at=r.delivered_at,
+            read_at=r.read_at if (u.id == me.id or (sender_sees_reads and receipts_on(u.read_receipts))) else None,
+        )
+        for r, u in db.execute(q).all()
     ]
     return MessageInfoOut(message_id=msg.id, sent_at=msg.created_at, receipts=receipts)
+
+
+# ---------- edit / delete for everyone ----------
+
+
+def _own_changeable_message(db: Session, message_id: int, me: User, action: str) -> Message:
+    msg = db.get(Message, message_id)
+    if msg is None or msg.kind != "text":
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Message not found")
+    svc.require_active(svc.get_membership(db, msg.conversation_id, me.id))
+    if msg.sender_id != me.id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, f"You can only {action} your own messages")
+    if utcnow() - msg.created_at > CHANGE_WINDOW:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Messages can only be {action}ed within 24 hours")
+    return msg
+
+
+@router.patch("/messages/{message_id}", response_model=MessageOut)
+async def edit_message(
+    message_id: int, body: MessageEditIn, me: User = Depends(current_user), db: Session = Depends(get_db)
+):
+    """Replace the text of your own message. Everyone sees "Edited"."""
+    msg = _own_changeable_message(db, message_id, me, "edit")
+    if msg.deleted_at is not None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "This message was deleted")
+    text = body.body.strip()
+    if not text and msg.attachment is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "A message can't be empty")
+    if text != msg.body:
+        msg.body = text
+        msg.edited_at = utcnow()
+        db.commit()
+        await publish_message_update(db, msg)
+    return message_out(db, msg, me.id)
+
+
+@router.delete("/messages/{message_id}", response_model=MessageOut)
+async def delete_for_everyone(message_id: int, me: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Delete your own message for everyone. The row stays as a tombstone
+    ("This message was deleted"); its text, file and reactions are removed."""
+    msg = _own_changeable_message(db, message_id, me, "delete")
+    if msg.deleted_at is None:  # deleting twice is harmless
+        msg.deleted_at = utcnow()
+        msg.body = ""
+        if msg.attachment is not None:
+            db.delete(msg.attachment)
+        db.execute(delete(Reaction).where(Reaction.message_id == msg.id))
+        db.commit()
+        await publish_message_update(db, msg)
+    return message_out(db, msg, me.id)
 
 
 # ---------- reactions ----------
@@ -103,7 +165,7 @@ def message_info(message_id: int, me: User = Depends(current_user), db: Session 
 
 def _message_for_member(db: Session, message_id: int, user: User) -> Message:
     msg = db.get(Message, message_id)
-    if msg is None or msg.kind != "text":
+    if msg is None or msg.kind != "text" or msg.deleted_at is not None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Message not found")
     svc.require_active(svc.get_membership(db, msg.conversation_id, user.id))
     return msg

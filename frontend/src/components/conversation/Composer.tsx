@@ -1,10 +1,11 @@
 "use client";
 
-import { FileText, Mic, Paperclip, SendHorizontal, Smile, X } from "lucide-react";
+import { Check, FileText, Mic, Paperclip, Pencil, SendHorizontal, Smile, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent } from "react";
 import { comingSoon } from "@/lib/actions";
 import { formatBytes, prepareFile } from "@/lib/files";
 import { messageSummary, userName, type NameContext } from "@/lib/names";
+import { getPref, usePref } from "@/lib/prefs";
 import { realtime } from "@/lib/socket";
 import type { Conversation } from "@/lib/types";
 import { useChat } from "@/store/chat";
@@ -85,6 +86,8 @@ function useTypingSignal(convId: number) {
     }
   };
   const ping = () => {
+    // With typing indicators off (Settings → Privacy) we don't announce our own typing.
+    if (!getPref("typing-indicators", true)) return;
     const now = Date.now();
     if (now - lastSent.current > TYPING_REFRESH_MS) {
       realtime.send({ type: "typing", conversation_id: convId, is_typing: true });
@@ -106,16 +109,38 @@ export function Composer({ conv, ctx }: { conv: Conversation; ctx: NameContext }
   const input = useRef<HTMLTextAreaElement>(null);
   const replyTo = useUI((s) => (s.replyTo?.conversation_id === conv.id ? s.replyTo : null));
   const setReplyTo = useUI((s) => s.setReplyTo);
+  const editing = useUI((s) => (s.editing?.conversation_id === conv.id ? s.editing : null));
+  const setEditing = useUI((s) => s.setEditing);
+  const [enterSends] = usePref("enter-sends", true);
+  const [spellCheck] = usePref("spell-check", true);
+  const draftBeforeEdit = useRef<string | null>(null);
   const send = useChat((s) => s.send);
   const pending = useUI((s) => (s.pendingFile?.convId === conv.id ? s.pendingFile.file : null));
   const setPendingFile = useUI((s) => s.setPendingFile);
   const picker = useRef<HTMLInputElement>(null);
   const typing = useTypingSignal(conv.id);
-  const canSend = !!text.trim() || !!pending;
+  const canSend = editing ? !!text.trim() || !!editing.attachment : !!text.trim() || !!pending;
+
+  // Editing loads the message's text into the composer; the unsent draft comes back afterwards.
+  useEffect(() => {
+    if (editing) {
+      draftBeforeEdit.current ??= text;
+      setText(editing.body);
+      requestAnimationFrame(() => {
+        const el = input.current;
+        el?.focus();
+        el?.setSelectionRange(el.value.length, el.value.length);
+      });
+    } else if (draftBeforeEdit.current !== null) {
+      setText(draftBeforeEdit.current);
+      draftBeforeEdit.current = null;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only when the edited message changes
+  }, [editing?.id]);
 
   useEffect(() => {
-    drafts.set(conv.id, text);
-  }, [conv.id, text]);
+    if (!editing) drafts.set(conv.id, text);
+  }, [conv.id, text, editing]);
 
   // Grow with content up to ~6 lines.
   useEffect(() => {
@@ -129,7 +154,14 @@ export function Composer({ conv, ctx }: { conv: Conversation; ctx: NameContext }
     input.current?.focus();
   }, [conv.id, replyTo?.id, pending]);
 
+  async function saveEdit(message: NonNullable<typeof editing>) {
+    const body = text.trim();
+    if (!body && !message.attachment) return;
+    if (body === message.body || (await useChat.getState().editMessage(message, body))) setEditing(null);
+  }
+
   function submit() {
+    if (editing) return void saveEdit(editing);
     const body = text.trim();
     if (!body && !pending) return;
     void send(conv.id, body, replyTo, pending);
@@ -149,8 +181,12 @@ export function Composer({ conv, ctx }: { conv: Conversation; ctx: NameContext }
 
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+      // "Enter key sends" off (Settings → Chats): Enter is a new line and Ctrl/⌘ + Enter sends.
+      if (!enterSends && !e.metaKey && !e.ctrlKey) return;
       e.preventDefault();
       submit();
+    } else if (e.key === "Escape" && editing) {
+      setEditing(null);
     } else if (e.key === "Escape" && replyTo) {
       setReplyTo(null);
     }
@@ -177,6 +213,19 @@ export function Composer({ conv, ctx }: { conv: Conversation; ctx: NameContext }
       </div>
 
       <div className="min-w-0 flex-1 rounded-[18px] bg-field">
+        {editing && (
+          <div className="flex items-start gap-2 px-2 pt-2">
+            <div className="min-w-0 flex-1 rounded-lg border-l-[3px] border-accent bg-chat px-2.5 py-1.5">
+              <div className="flex items-center gap-1.5 text-[13px] font-semibold leading-4">
+                <Pencil size={12} strokeWidth={2} /> Edit message
+              </div>
+              <div className="mt-0.5 line-clamp-2 text-[13px] leading-[18px] text-ink-2">{messageSummary(editing)}</div>
+            </div>
+            <button className="icon-btn h-6 w-6" onClick={() => setEditing(null)} aria-label="Cancel edit">
+              <X size={14} />
+            </button>
+          </div>
+        )}
         {replyTo && (
           <div className="flex items-start gap-2 px-2 pt-2">
             <div className="min-w-0 flex-1 rounded-lg border-l-[3px] border-accent bg-chat px-2.5 py-1.5">
@@ -188,14 +237,14 @@ export function Composer({ conv, ctx }: { conv: Conversation; ctx: NameContext }
             </button>
           </div>
         )}
-        {pending && <PendingFile file={pending.file} onRemove={() => setPendingFile(null)} />}
+        {pending && !editing && <PendingFile file={pending.file} onRemove={() => setPendingFile(null)} />}
         <textarea
           ref={input}
           rows={1}
           value={text}
           onChange={(e) => {
             setText(e.target.value);
-            if (e.target.value) typing.ping();
+            if (e.target.value && !editing) typing.ping();
             else typing.stop();
           }}
           onKeyDown={onKeyDown}
@@ -203,13 +252,16 @@ export function Composer({ conv, ctx }: { conv: Conversation; ctx: NameContext }
           onBlur={typing.stop}
           placeholder={pending ? "Add a message" : "Message"}
           aria-label="Message"
+          spellCheck={spellCheck}
           className="block max-h-[140px] w-full resize-none bg-transparent px-3.5 py-2 text-body text-ink outline-none placeholder:text-ink-3"
         />
       </div>
 
-      <button className="icon-btn h-9 w-9" onClick={() => picker.current?.click()} aria-label="Attach file" title="Attach file">
-        <Paperclip size={19} strokeWidth={1.75} />
-      </button>
+      {!editing && (
+        <button className="icon-btn h-9 w-9" onClick={() => picker.current?.click()} aria-label="Attach file" title="Attach file">
+          <Paperclip size={19} strokeWidth={1.75} />
+        </button>
+      )}
       <input
         ref={picker}
         type="file"
@@ -221,7 +273,18 @@ export function Composer({ conv, ctx }: { conv: Conversation; ctx: NameContext }
           if (file) void attachFile(conv.id, file);
         }}
       />
-      {canSend ? (
+      {editing ? (
+        <button
+          key="save"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent text-white hover:bg-accent-hover disabled:opacity-50"
+          onClick={submit}
+          disabled={!canSend}
+          aria-label="Save edit"
+          title="Save edit"
+        >
+          <Check size={18} />
+        </button>
+      ) : canSend ? (
         <button key="send" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent text-white hover:bg-accent-hover" onClick={submit} aria-label="Send" title="Send (Enter)">
           <SendHorizontal size={18} />
         </button>

@@ -174,6 +174,21 @@ async def publish_message(
         await notify_status_changes(db, [msg.id])
 
 
+async def publish_message_update(db: Session, msg: Message) -> None:
+    """Push an edited or deleted message to everyone who can see it,
+    including members who have since left (they keep read-only history)."""
+    db.refresh(msg)
+    members = set(
+        db.scalars(select(ConversationMember.user_id).where(ConversationMember.conversation_id == msg.conversation_id))
+    )
+    others = [uid for uid in members if uid != msg.sender_id]
+    as_recipient = message_out(db, msg, viewer_id=-1).model_dump(mode="json")
+    await manager.send_to_users(others, {"type": "message.updated", "message": as_recipient})
+    if msg.sender_id is not None:
+        as_sender = message_out(db, msg, viewer_id=msg.sender_id).model_dump(mode="json")
+        await manager.send_to_user(msg.sender_id, {"type": "message.updated", "message": as_sender})
+
+
 async def publish_conversation(db: Session, conv: Conversation, also_notify: Iterable[int] = ()) -> None:
     """Send each member their own view of the conversation (unread count,
     role, etc. differ per viewer). `also_notify` covers users who were just
@@ -219,7 +234,10 @@ async def publish_presence(db: Session, user: User) -> None:
 
 async def publish_user(db: Session, user: User) -> None:
     event = {"type": "user.updated", "user": user_out(user).model_dump(mode="json")}
-    await manager.send_to_users(related_user_ids(db, user.id) | {user.id}, event)
+    await manager.send_to_users(related_user_ids(db, user.id), event)
+    # The user's own devices also get their private settings.
+    own = {"type": "user.updated", "user": user_out(user, is_self=True).model_dump(mode="json")}
+    await manager.send_to_user(user.id, own)
 
 
 # ---------- disappearing messages ----------

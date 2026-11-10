@@ -14,6 +14,7 @@ export interface User {
   avatar_url: string | null;
   online: boolean;
   last_seen_at: string | null;
+  read_receipts?: boolean | null; // only on your own user
 }
 
 export interface Contact {
@@ -55,11 +56,13 @@ export interface Message {
   body: string; // text, or a SystemEvent key when kind === "system"
   meta: Record<string, unknown> | null;
   client_id: string | null;
-  reply_to: { id: number; sender_id: number | null; body: string; attachment: Attachment | null } | null;
+  reply_to: { id: number; sender_id: number | null; body: string; attachment: Attachment | null; deleted?: boolean } | null;
   attachment: Attachment | null;
   reactions: { user_id: number; emoji: string }[];
   created_at: string;
   expires_at: string | null;
+  edited_at?: string | null;
+  deleted_at?: string | null; // "delete for everyone": body and file are gone
   status: MessageStatus | null; // only on the viewer's own messages
 }
 
@@ -113,6 +116,7 @@ export type ServerEvent =
   | { type: "message.new"; message: Message }
   | { type: "message.status"; updates: { id: number; conversation_id: number; status: MessageStatus }[] }
   | { type: "message.reactions"; conversation_id: number; message_id: number; reactions: Message["reactions"] }
+  | { type: "message.updated"; message: Message } // edited or deleted for everyone
   | { type: "message.deleted"; conversation_id: number; ids: number[] }
   | { type: "conversation.updated"; conversation: Conversation }
   | { type: "conversation.read"; conversation_id: number }

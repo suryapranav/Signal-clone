@@ -27,8 +27,10 @@ A functional clone of the Signal messenger: phone-number onboarding, contacts, 1
 - Attachments: images and files up to 5 MB, added with the paperclip, by pasting, or by dragging onto the chat. Photos show inline with a full-screen viewer; files show as download cards. Uploads are optimistic and show a local preview immediately.
 - Emoji reactions (Signal's six quick reactions; one per person; tap a reaction to toggle it)
 - Reply-to with quoted messages (click a quote to jump to the original)
+- **Edit** your messages (others see "Edited") and **delete for everyone** (a "This message was deleted" placeholder stays), both within 24 hours of sending and updated live for everyone in the chat
 - Disappearing messages that actually work (per-chat timer; messages count down and are deleted on the server)
 - Dark mode (System, Light or Dark)
+- Working settings: read receipts (enforced on the server, both ways, as in Signal), typing indicators, Enter key sends, spell check, notification pop-ups, sound and content
 - Responsive layout: single pane with back navigation on phones
 - Search inside a chat, with matches highlighted and up/down to step through them
 - Keyboard shortcuts: `Ctrl/⌘ K` search · `Ctrl/⌘ Alt N` new chat · `Alt ↑/↓` switch chats · `Esc` cancel reply or close panel · `Ctrl/⌘ /` list all shortcuts
@@ -84,7 +86,7 @@ npx playwright install chromium           # once
 npm run test:e2e                          # needs the backend's Python packages installed
 ```
 
-The browser tests start their own backend (with a fresh SQLite database) and a production build of the frontend on ports 8010 and 3010, so they don't touch your dev servers or data. They cover sign-up, two people chatting live (typing, receipts, reactions, replies, message details), unread counts, groups and member removal, attachments, disappearing messages, search and archive, and the phone layout. Any browser console error fails the test.
+The browser tests start their own backend (with a fresh SQLite database) and a production build of the frontend on ports 8010 and 3010, so they don't touch your dev servers or data. They cover sign-up, two people chatting live (typing, receipts, reactions, replies, message details), editing and deleting for everyone, unread counts, groups and member removal, attachments, disappearing messages, search and archive, settings that change behaviour (Enter key sends, read receipts), and the phone layout. Any browser console error fails the test.
 
 ## Architecture
 
@@ -144,6 +146,7 @@ erDiagram
         string avatar_color "Signal palette key A100–A210"
         text avatar_url "data URL, nullable"
         datetime last_seen_at
+        bool read_receipts "privacy setting"
     }
     auth_sessions {
         string token_hash PK "SHA-256 of bearer token"
@@ -188,6 +191,8 @@ erDiagram
         string client_id "UK with sender_id"
         datetime created_at
         datetime expires_at "disappearing"
+        datetime edited_at
+        datetime deleted_at "delete for everyone"
     }
     message_receipts {
         int message_id PK,FK
@@ -221,6 +226,8 @@ erDiagram
 - **Membership is soft-deleted (`left_at`).** A removed member keeps read-only access to history up to their removal, as in Signal. Someone added later only sees messages from `joined_at` onward. Re-adding someone reopens the window.
 - **Unread count = receipts with `read_at IS NULL`.** Status and unread badges come from the same table, so they can't drift apart. The `(user_id, read_at)` index keeps the query cheap.
 - **System messages** ("Alice added Bob") are rows with `kind = 'system'`, an event key in `body` and details in `meta`. The client renders them from the viewer's perspective ("You added Bob" vs "Alice added Bob").
+- **Delete for everyone keeps a tombstone.** The row stays with `deleted_at` set so every chat shows "This message was deleted" in the right place, but its text, file and reactions are removed, and quotes of it stop showing the text. Edits overwrite `body` and set `edited_at`; the server allows both only for the sender, within 24 hours.
+- **Read receipts are a two-way privacy setting.** A read only counts toward "read" if the reader has receipts on, and a sender who turned them off never sees "read". The rule lives in the one query that computes statuses, so ticks, group status and Message details all follow it.
 - **Only a hash of the session token is stored**, so a leaked database doesn't leak working sessions. Logout deletes the session row.
 - **Attachments are uploaded first and linked when the message is sent.** Only the uploader can attach a file, and only once (`message_id` is UNIQUE). The bytes live in a deferred BLOB column, so message lists never load file contents. Image width and height are stored so the client can reserve space before the image loads, which keeps the chat from jumping.
 - **The same schema runs on SQLite and Postgres.** SQLite keeps local setup to zero steps; Postgres (via `DATABASE_URL`) keeps data across restarts in production. CI runs the backend suite on both.
@@ -253,13 +260,15 @@ All endpoints are under `/api` and take `Authorization: Bearer <token>`, except 
 | POST | `/conversations/{id}/messages` | Send `{body, client_id, reply_to_id?, attachment_id?}` (body may be empty if there's an attachment) |
 | POST | `/attachments` | Upload a file (multipart, max 5 MB) → `{id, url, …}` to use as `attachment_id` |
 | GET | `/attachments/{key}` | Download a sent attachment (see note below) |
+| PATCH | `/messages/{id}` | Edit your own message's text (within 24 hours) |
+| DELETE | `/messages/{id}` | Delete your own message for everyone (within 24 hours) |
 | PUT / DELETE | `/messages/{id}/reaction` | Set or remove your emoji reaction |
 | GET | `/messages/{id}/info` | Message details: per-recipient delivered and read times (the sender sees everyone; others see only themselves) |
 | WS | `/ws?token=` | Real-time events (see below) |
 
 **Attachment downloads** use a random, unguessable key in the URL instead of the bearer token, because `<img>` tags can't send an `Authorization` header (the same idea as an S3 presigned URL). Only JPEG, PNG, GIF and WebP render inline. Everything else, including SVG and HTML, is served as a download with `nosniff` and a sandbox CSP, so an uploaded file can't run scripts on the API's origin.
 
-**Server → client events:** `message.new`, `message.status`, `message.reactions`, `message.deleted`, `conversation.updated`, `conversation.read`, `typing`, `presence`, `user.updated`.
+**Server → client events:** `message.new`, `message.updated` (edited or deleted for everyone), `message.status`, `message.reactions`, `message.deleted`, `conversation.updated`, `conversation.read`, `typing`, `presence`, `user.updated`.
 **Client → server events:** `typing`, `read`, `ping`.
 
 ## Project structure
@@ -323,7 +332,7 @@ frontend/
 
 GitHub Actions (`.github/workflows/ci.yml`) runs four jobs on every push:
 
-- **Backend tests** on SQLite and again on **Postgres 16**: REST and WebSocket flows, attachments, group admin, disappearing messages and message details.
+- **Backend tests** on SQLite and again on **Postgres 16**: REST and WebSocket flows, attachments, group admin, disappearing messages, message details, edit and delete for everyone, and the read-receipts setting.
 - **Frontend** lint, typecheck and production build.
 - **Browser tests**: the Playwright suite against the real backend and a production build. On failure, the HTML report with traces and screenshots is uploaded as a build artifact.
 
@@ -348,7 +357,8 @@ Render's free tier sleeps after inactivity, and the first request takes about 50
 - **Online / last seen** is real for connected users (based on open sockets); seeded users who never connect show a seeded "last seen" time.
 - **Profile photos and attachments are stored in the database** (photos as data URLs up to ~400 KB, attachments as BLOBs up to 5 MB, one per message). This keeps deployment to an API plus a database, with no separate file storage.
 - **Single backend instance:** the WebSocket registry is in memory.
-- **Tables are created on startup** (`create_all`) rather than through migrations, which is enough while the schema only grows with the app.
+- **Tables are created on startup** (`create_all`) rather than through migrations. Because the schema only grows, a small startup step (`add_missing_columns` in `database.py`) adds any new nullable column an existing database lacks, so a Postgres database created before a feature keeps working after a deploy.
+- **Edit and delete for everyone are limited to 24 hours after sending.** There's no edit history; the latest text replaces the old one.
 - **Disappearing timers start when a message is sent** (Signal starts them when the message is read), which keeps the logic server-side and deterministic.
 
 ## What I'd do next

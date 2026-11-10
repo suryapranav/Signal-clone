@@ -41,6 +41,8 @@ class UserOut(BaseModel):
     avatar_url: str | None
     online: bool
     last_seen_at: UTCDateTime | None
+    # Your own privacy settings; only included when the user is you.
+    read_receipts: bool | None = None
 
 
 class PhoneIn(BaseModel):
@@ -78,6 +80,7 @@ class ProfileUpdateIn(BaseModel):
     avatar_color: str | None = None
     avatar_url: str | None = None  # data URL; "" removes the photo
     username: str | None = None  # "" removes the username
+    read_receipts: bool | None = None
 
     @field_validator("display_name")
     @classmethod
@@ -145,6 +148,7 @@ class ReplyPreview(BaseModel):
     sender_id: int | None
     body: str
     attachment: AttachmentOut | None
+    deleted: bool = False
 
 
 class ReactionOut(BaseModel):
@@ -165,8 +169,14 @@ class MessageOut(BaseModel):
     reactions: list[ReactionOut]
     created_at: UTCDateTime
     expires_at: UTCDateTime | None
+    edited_at: UTCDateTime | None = None
+    deleted_at: UTCDateTime | None = None
     # Only present on the viewer's own messages.
     status: MessageStatus | None
+
+
+class MessageEditIn(BaseModel):
+    body: str = Field(max_length=4000)
 
 
 class MessageCreateIn(BaseModel):

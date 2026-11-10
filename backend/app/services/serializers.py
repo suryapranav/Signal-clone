@@ -8,7 +8,7 @@ rendering N conversations or messages costs a fixed number of SQL queries.
 from collections import defaultdict
 from collections.abc import Sequence
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from ..database import utcnow
@@ -34,8 +34,10 @@ from ..schemas import (
 )
 
 
-def user_out(user: User) -> UserOut:
+def user_out(user: User, *, is_self: bool = False) -> UserOut:
+    """`is_self` adds the user's own settings, which nobody else should see."""
     return UserOut(
+        read_receipts=receipts_on(user.read_receipts) if is_self else None,
         id=user.id,
         phone=user.phone,
         username=user.username,
@@ -87,28 +89,45 @@ def visible_window():
 # ---------- messages ----------
 
 
+def receipts_on(setting: bool | None) -> bool:
+    return setting is not False  # NULL (rows from before the setting) means on
+
+
 def message_statuses(db: Session, message_ids: Sequence[int]) -> dict[int, MessageStatus]:
     """Aggregate receipts into one status per message.
 
     read      — every recipient has read it
     delivered — every recipient's device has received it
     sent      — stored on the server (or there are no recipients, e.g. Note to Self)
+
+    Read receipts are a privacy setting on both ends: a read only counts if
+    the reader has them on, and a sender who turned them off never sees "read".
     """
     if not message_ids:
         return {}
+    reader_shares = or_(User.read_receipts.is_(None), User.read_receipts.is_(True))
     rows = db.execute(
         select(
             MessageReceipt.message_id,
             func.count(),
             func.count(MessageReceipt.delivered_at),
-            func.count(MessageReceipt.read_at),
+            func.count(case((reader_shares, MessageReceipt.read_at))),
         )
+        .join(User, User.id == MessageReceipt.user_id)
         .where(MessageReceipt.message_id.in_(message_ids))
         .group_by(MessageReceipt.message_id)
     ).all()
+    sender_sees_reads = {
+        mid: receipts_on(setting)
+        for mid, setting in db.execute(
+            select(Message.id, User.read_receipts)
+            .join(User, User.id == Message.sender_id)
+            .where(Message.id.in_(message_ids))
+        )
+    }
     statuses: dict[int, MessageStatus] = {mid: "sent" for mid in message_ids}
     for mid, total, delivered, read in rows:
-        if read == total:
+        if read == total and sender_sees_reads.get(mid, True):
             statuses[mid] = "read"
         elif delivered == total:
             statuses[mid] = "delivered"
@@ -146,6 +165,7 @@ def messages_out(db: Session, messages: Sequence[Message], viewer_id: int) -> li
                 reply_to=ReplyPreview(
                     id=reply.id, sender_id=reply.sender_id, body=reply.body,
                     attachment=attachment_out(reply.attachment),
+                    deleted=reply.deleted_at is not None,
                 )
                 if reply
                 else None,
@@ -153,6 +173,8 @@ def messages_out(db: Session, messages: Sequence[Message], viewer_id: int) -> li
                 reactions=reactions.get(m.id, []),
                 created_at=m.created_at,
                 expires_at=m.expires_at,
+                edited_at=m.edited_at,
+                deleted_at=m.deleted_at,
                 status=statuses.get(m.id),
             )
         )

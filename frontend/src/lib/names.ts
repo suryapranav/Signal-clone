@@ -79,13 +79,17 @@ export function systemText(ctx: NameContext, msg: Message): string {
 export function previewText(ctx: NameContext, conv: Conversation, msg: Message | null): string {
   if (!msg) return isNoteToSelf(conv, ctx.meId) ? "Add notes to yourself" : "";
   if (msg.kind === "system") return systemText(ctx, msg);
+  if (msg.deleted_at) return msg.sender_id === ctx.meId ? "You deleted this message" : "This message was deleted";
   const text = messageSummary(msg);
   if (conv.kind === "group" && msg.sender_id !== ctx.meId) return `${firstName(ctx, msg.sender_id)}: ${text}`;
   return text;
 }
 
 /** Text of a message, with its attachment shown as "📷 Photo" / "📎 file.pdf". */
-export function messageSummary(msg: Pick<Message, "body" | "attachment">): string {
+export function messageSummary(
+  msg: Pick<Message, "body" | "attachment"> & { deleted_at?: string | null; deleted?: boolean },
+): string {
+  if (msg.deleted_at || msg.deleted) return "This message was deleted";
   if (!msg.attachment) return msg.body;
   const label = attachmentLabel(msg.attachment);
   return msg.body ? `${label.split(" ")[0]} ${msg.body}` : label;

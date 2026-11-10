@@ -249,15 +249,18 @@ function AppearancePage() {
 }
 
 function ChatsPage() {
-  const [previews, setPreviews] = usePref("link-previews", true);
   const [spell, setSpell] = usePref("spell-check", true);
   const [enterSends, setEnterSends] = usePref("enter-sends", true);
   return (
     <Page title="Chats">
       <Group>
-        <SwitchRow title="Generate link previews" description="Retrieve link previews directly from websites." checked={previews} onChange={setPreviews} />
-        <SwitchRow title="Spell check" checked={spell} onChange={setSpell} />
-        <SwitchRow title="Enter key sends" description="Use Shift + Enter for a new line." checked={enterSends} onChange={setEnterSends} disabled />
+        <SwitchRow title="Spell check" description="Underline misspelled words while you type a message." checked={spell} onChange={setSpell} />
+        <SwitchRow
+          title="Enter key sends"
+          description={enterSends ? "Use Shift + Enter for a new line." : "Enter adds a new line. Use Ctrl/⌘ + Enter to send."}
+          checked={enterSends}
+          onChange={setEnterSends}
+        />
       </Group>
     </Page>
   );
@@ -270,22 +273,51 @@ function NotificationsPage() {
   return (
     <Page title="Notifications">
       <Group title="Messages">
-        <SwitchRow title="Show notifications" description="In-app toasts when a message arrives in another chat." checked={messages} onChange={setMessages} />
-        <SwitchRow title="Notification sound" checked={sound} onChange={setSound} />
-        <SwitchRow title="Show name and message" checked={preview} onChange={setPreview} />
+        <SwitchRow title="Show notifications" description="A pop-up when a message arrives in a chat you don't have open." checked={messages} onChange={setMessages} />
+        <SwitchRow title="Notification sound" description="Play a chime with each notification." checked={sound} onChange={setSound} disabled={!messages} />
+        <SwitchRow
+          title="Show name and message"
+          description="Off: notifications only say that a new message arrived."
+          checked={preview}
+          onChange={setPreview}
+          disabled={!messages}
+        />
       </Group>
     </Page>
   );
 }
 
 function PrivacyPage() {
-  const [receipts, setReceipts] = usePref("read-receipts", true);
+  const receipts = useChat((s) => s.me?.read_receipts !== false);
   const [typing, setTyping] = usePref("typing-indicators", true);
+
+  // Read receipts live on the server: they change what other people see.
+  async function setReceipts(on: boolean) {
+    try {
+      useChat.getState().setMe(await api.updateMe({ read_receipts: on }));
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : "Couldn't change read receipts", { tone: "error" });
+    }
+  }
+
   return (
     <Page title="Privacy">
       <Group title="Messaging">
-        <SwitchRow title="Read receipts" description="Always on in this demo, so you can see the receipt flow." checked={receipts} onChange={setReceipts} disabled />
-        <SwitchRow title="Typing indicators" description="Always on in this demo." checked={typing} onChange={setTyping} disabled />
+        <SwitchRow
+          title="Read receipts"
+          description="If read receipts are off, you won't be able to see read receipts from others."
+          checked={receipts}
+          onChange={setReceipts}
+        />
+        <SwitchRow
+          title="Typing indicators"
+          description="If typing indicators are off, you won't be able to see typing indicators from others."
+          checked={typing}
+          onChange={(on) => {
+            setTyping(on);
+            if (!on) useChat.setState({ typing: {} }); // clear any that are showing now
+          }}
+        />
       </Group>
       <Group title="Disappearing messages">
         <p className="py-3 text-body text-ink-2">Set a timer for each chat from its chat settings.</p>

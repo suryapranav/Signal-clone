@@ -221,3 +221,110 @@ def test_message_info(client):
     # A recipient only sees their own receipt.
     mine = client.get(f"/api/messages/{msg['id']}/info", headers=auth(p)).json()
     assert [r["user"]["display_name"] for r in mine["receipts"]] == ["Priya Sharma"]
+
+
+def test_edit_and_delete_for_everyone(client):
+    a, b = login(client, ALICE), login(client, BOB)
+    conv = _direct_with(client, a, b["_user"]["id"])
+    send = lambda h, body, **kw: client.post(  # noqa: E731
+        f"/api/conversations/{conv['id']}/messages", json={"body": body, **kw}, headers=auth(h)
+    ).json()
+
+    with client.websocket_connect(f"/ws?token={b['_token']}") as wb:
+        next_event(wb, "ready")
+        msg = send(a, "see you at 9")
+        next_event(wb, "message.new")
+
+        # Only the sender can edit; the recipient gets the new text live.
+        assert client.patch(f"/api/messages/{msg['id']}", json={"body": "nope"}, headers=auth(b)).status_code == 403
+        r = client.patch(f"/api/messages/{msg['id']}", json={"body": "see you at 10"}, headers=auth(a))
+        assert r.status_code == 200 and r.json()["edited_at"] is not None
+        ev = next_event(wb, "message.updated")["message"]
+        assert ev["body"] == "see you at 10" and ev["edited_at"] is not None
+        assert client.patch(f"/api/messages/{msg['id']}", json={"body": "  "}, headers=auth(a)).status_code == 400
+
+        # A reaction and a reply, then Alice deletes the original for everyone.
+        client.put(f"/api/messages/{msg['id']}/reaction", json={"emoji": "👍"}, headers=auth(b))
+        reply = send(b, "great", reply_to_id=msg["id"])
+        assert client.delete(f"/api/messages/{msg['id']}", headers=auth(b)).status_code == 403
+        r = client.delete(f"/api/messages/{msg['id']}", headers=auth(a))
+        assert r.status_code == 200
+        gone = next_event(wb, "message.updated")["message"]
+        assert gone["deleted_at"] is not None and gone["body"] == "" and gone["reactions"] == []
+        # Deleting again is harmless.
+        assert client.delete(f"/api/messages/{msg['id']}", headers=auth(a)).status_code == 200
+
+    page = client.get(f"/api/conversations/{conv['id']}/messages", headers=auth(b)).json()["messages"]
+    tomb = next(m for m in page if m["id"] == msg["id"])
+    assert tomb["deleted_at"] and tomb["body"] == ""
+    quoted = next(m for m in page if m["id"] == reply["id"])["reply_to"]
+    assert quoted["deleted"] and quoted["body"] == ""  # the quote no longer leaks the text
+
+    # A deleted message can't be edited, reacted to or replied to.
+    assert client.patch(f"/api/messages/{msg['id']}", json={"body": "x"}, headers=auth(a)).status_code == 400
+    assert client.put(f"/api/messages/{msg['id']}/reaction", json={"emoji": "❤️"}, headers=auth(b)).status_code == 404
+    r = client.post(f"/api/conversations/{conv['id']}/messages", json={"body": "hm", "reply_to_id": msg["id"]}, headers=auth(b))
+    assert r.status_code == 400
+
+
+def test_delete_removes_attachment(client):
+    a, b = login(client, ALICE), login(client, BOB)
+    conv = _direct_with(client, a, b["_user"]["id"])
+    att = client.post("/api/attachments", files={"file": ("pic.png", PNG_1x1, "image/png")}, headers=auth(a)).json()
+    msg = client.post(f"/api/conversations/{conv['id']}/messages",
+                      json={"attachment_id": att["id"]}, headers=auth(a)).json()
+    url = msg["attachment"]["url"]
+    assert client.get(url).status_code == 200
+    gone = client.delete(f"/api/messages/{msg['id']}", headers=auth(a)).json()
+    assert gone["attachment"] is None
+    assert client.get(url).status_code == 404
+
+
+def test_edit_window(client):
+    from app.database import SessionLocal
+    from app.models import Message
+
+    a, b = login(client, ALICE), login(client, BOB)
+    conv = _direct_with(client, a, b["_user"]["id"])
+    msg = client.post(f"/api/conversations/{conv['id']}/messages", json={"body": "old news"}, headers=auth(a)).json()
+    with SessionLocal() as db:  # pretend it was sent a year ago
+        row = db.get(Message, msg["id"])
+        row.created_at = row.created_at.replace(year=row.created_at.year - 1)
+        db.commit()
+    assert client.patch(f"/api/messages/{msg['id']}", json={"body": "new"}, headers=auth(a)).status_code == 400
+    assert client.delete(f"/api/messages/{msg['id']}", headers=auth(a)).status_code == 400
+
+
+def test_read_receipts_setting(client):
+    a, b = login(client, ALICE), login(client, BOB)
+    conv = _direct_with(client, a, b["_user"]["id"])
+    assert client.get("/api/users/me", headers=auth(b)).json()["read_receipts"] is True
+    # Other people's settings are never exposed.
+    assert client.get("/api/users/lookup", params={"q": ALICE}, headers=auth(b)).json()["read_receipts"] is None
+
+    def status_after_bob_reads(text):
+        msg = client.post(f"/api/conversations/{conv['id']}/messages", json={"body": text}, headers=auth(a)).json()
+        client.post(f"/api/conversations/{conv['id']}/read", headers=auth(b))
+        page = client.get(f"/api/conversations/{conv['id']}/messages", headers=auth(a)).json()["messages"]
+        info = client.get(f"/api/messages/{msg['id']}/info", headers=auth(a)).json()
+        return next(m for m in page if m["id"] == msg["id"])["status"], info["receipts"][0]["read_at"]
+
+    assert status_after_bob_reads("one")[0] == "read"
+
+    # Bob turns read receipts off: Alice no longer sees when he reads.
+    r = client.patch("/api/users/me", json={"read_receipts": False}, headers=auth(b))
+    assert r.json()["read_receipts"] is False
+    status, read_at = status_after_bob_reads("two")
+    assert status != "read" and read_at is None
+    # ...but Bob's unread count still clears.
+    convs = client.get("/api/conversations", headers=auth(b)).json()
+    assert next(c for c in convs if c["id"] == conv["id"])["unread_count"] == 0
+
+    # And Bob doesn't see Alice's reads either.
+    mine = client.post(f"/api/conversations/{conv['id']}/messages", json={"body": "three"}, headers=auth(b)).json()
+    client.post(f"/api/conversations/{conv['id']}/read", headers=auth(a))
+    page = client.get(f"/api/conversations/{conv['id']}/messages", headers=auth(b)).json()["messages"]
+    assert next(m for m in page if m["id"] == mine["id"])["status"] != "read"
+
+    client.patch("/api/users/me", json={"read_receipts": True}, headers=auth(b))
+    assert status_after_bob_reads("four")[0] == "read"
