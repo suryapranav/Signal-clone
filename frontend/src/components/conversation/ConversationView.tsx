@@ -12,6 +12,8 @@ export function ConversationView({ convId }: { convId: number }) {
   const conv = useChat((s) => s.conversations[convId]);
   const unread = conv?.unread_count ?? 0;
   const ctx = useNames();
+  // Captured before the read effect below clears it: where the "unread messages" divider goes.
+  const [unreadAtOpen] = useState(() => useChat.getState().conversations[convId]?.unread_count ?? 0);
 
   // Opening a chat (or receiving a message while it's on screen) marks it read.
   useEffect(() => {
@@ -62,7 +64,7 @@ export function ConversationView({ convId }: { convId: number }) {
         </div>
       )}
       <ConversationHeader conv={conv} ctx={ctx} />
-      <MessageList conv={conv} ctx={ctx} />
+      <MessageList conv={conv} ctx={ctx} unreadAtOpen={unreadAtOpen} />
       {conv.is_member ? (
         <Composer conv={conv} ctx={ctx} />
       ) : (

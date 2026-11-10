@@ -187,6 +187,19 @@ class MessagePage(BaseModel):
     has_more: bool
 
 
+class ReceiptOut(BaseModel):
+    user: UserOut
+    delivered_at: UTCDateTime | None
+    read_at: UTCDateTime | None
+
+
+class MessageInfoOut(BaseModel):
+    message_id: int
+    sent_at: UTCDateTime
+    # The sender sees every recipient; anyone else sees only their own receipt.
+    receipts: list[ReceiptOut]
+
+
 class ReactionIn(BaseModel):
     emoji: str = Field(min_length=1, max_length=16)
 

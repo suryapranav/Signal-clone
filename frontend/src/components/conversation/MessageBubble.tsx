@@ -1,6 +1,6 @@
 "use client";
 
-import { Download, FileText, Reply, SmilePlus, Timer } from "lucide-react";
+import { Copy, Download, Ellipsis, FileText, Info, Reply, SmilePlus, Timer } from "lucide-react";
 import { memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { fileUrl } from "@/lib/api";
 import { avatarColor } from "@/lib/colors";
@@ -10,8 +10,9 @@ import { messageSummary, userName, type NameContext } from "@/lib/names";
 import type { Attachment, Message } from "@/lib/types";
 import { cx } from "@/lib/utils";
 import { useChat, type UIMessage } from "@/store/chat";
-import { useUI } from "@/store/ui";
+import { toast, useUI } from "@/store/ui";
 import { Avatar } from "../ui/Avatar";
+import { Menu } from "../ui/Menu";
 import { StatusIcon } from "../ui/StatusIcon";
 
 /** Sender name color: the avatar's saturated tone in light mode, its pastel tone in dark mode. */
@@ -87,10 +88,15 @@ function Quote({ reply, mine, ctx }: { reply: NonNullable<Message["reply_to"]>; 
   return (
     <button
       onClick={() => focusMessage(reply.id)}
-      className={cx("mb-1 block w-full min-w-[160px] rounded-lg border-l-[3px] px-2.5 py-1.5 text-left", mine ? "border-white/80 bg-white/20" : "border-ink-2 bg-[color-mix(in_srgb,var(--chat)_60%,transparent)]")}
+      // Signal's quote: a darker panel 8px in from the bubble's edges, with a solid bar on the left.
+      className={cx(
+        "relative -mx-1 mb-1.5 block w-[calc(100%+0.5rem)] min-w-[min(180px,100%)] overflow-hidden rounded-lg py-1.5 pl-4 pr-3 text-left",
+        mine ? "bg-[color-mix(in_srgb,var(--accent)_50%,black)]" : "bg-[color-mix(in_srgb,var(--chat)_65%,var(--bubble-in))]",
+      )}
     >
-      <div className="text-[13px] font-semibold leading-4">{author}</div>
-      <div className={cx("mt-0.5 line-clamp-2 text-[13px] leading-[18px]", mine ? "text-white/90" : "text-ink-2")}>{messageSummary(reply)}</div>
+      <span className={cx("absolute inset-y-0 left-0 w-1", mine ? "bg-white" : "bg-ink-2")} aria-hidden />
+      <div className="text-body font-semibold">{author}</div>
+      <div className={cx("line-clamp-2 text-body", mine ? "text-white" : "text-ink")}>{messageSummary(reply)}</div>
     </button>
   );
 }
@@ -145,7 +151,7 @@ function ImageAttachment({ att, alone, flushTop, overlay }: { att: Attachment; a
     <button
       className={cx(
         "relative block overflow-hidden bg-field",
-        alone ? "rounded-[15px]" : cx("-mx-2.5 mb-1.5 rounded-[14px]", flushTop ? "-mt-[4px]" : "mt-1"),
+        alone ? "rounded-[18px]" : cx("-mx-2.5 mb-1.5 rounded-[14px]", flushTop ? "-mt-[4px]" : "mt-1"),
       )}
       // The negative margins widen the available space by 1.25rem, so allow for it.
       style={{ ...imageBox(att), maxWidth: alone ? "100%" : "calc(100% + 1.25rem)" }}
@@ -154,7 +160,15 @@ function ImageAttachment({ att, alone, flushTop, overlay }: { att: Attachment; a
     >
       {/* eslint-disable-next-line @next/next/no-img-element -- served by our API, sized from stored dimensions */}
       <img src={src} alt={att.filename} className="h-full w-full object-cover" loading="lazy" />
-      {overlay && <span className="absolute bottom-1.5 right-2 rounded-full bg-black/45 px-2 py-0.5">{overlay}</span>}
+      {alone && (
+        <span className="pointer-events-none absolute inset-0 rounded-[18px] border border-[color-mix(in_srgb,var(--ink)_14%,transparent)]" aria-hidden />
+      )}
+      {overlay && (
+        <>
+          <span className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-black/45 to-transparent" aria-hidden />
+          <span className="absolute bottom-2 right-3 [text-shadow:0_1px_2px_rgba(0,0,0,0.5)]">{overlay}</span>
+        </>
+      )}
     </button>
   );
 }
@@ -167,7 +181,7 @@ function FileAttachment({ att, mine }: { att: Attachment; mine: boolean }) {
       target="_blank"
       rel="noreferrer"
       className={cx(
-        "mb-1 flex min-w-[220px] max-w-full items-center gap-3 rounded-xl px-2 py-1.5",
+        "mb-1 flex min-w-[min(220px,100%)] max-w-full items-center gap-3 rounded-xl px-2 py-1.5",
         mine ? "bg-white/15 hover:bg-white/25" : "bg-[color-mix(in_srgb,var(--chat)_55%,transparent)] hover:bg-chat",
       )}
     >
@@ -225,19 +239,63 @@ export const MessageBubble = memo(function MessageBubble({ msg, ctx, isGroup, ca
       }
     : {};
   const myReaction = msg.reactions.find((r) => r.user_id === ctx.meId)?.emoji;
+  const openModal = useUI((s) => s.openModal);
+  const search = useUI((s) => s.chatSearch.trim());
+
+  // Highlight matches while searching in the chat.
+  const body =
+    search && msg.body.toLowerCase().includes(search.toLowerCase())
+      ? msg.body.split(new RegExp(`(${search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "gi")).map((part, i) =>
+          i % 2 ? (
+            <mark key={i} className="rounded-[3px] bg-[#ffd75e] text-black">
+              {part}
+            </mark>
+          ) : (
+            part
+          ),
+        )
+      : msg.body;
 
   const radius = mine
     ? cx("rounded-[18px]", !first && "rounded-tr-[4px]", !last && "rounded-br-[4px]")
     : cx("rounded-[18px]", !first && "rounded-tl-[4px]", !last && "rounded-bl-[4px]");
 
   const actions = interactive && (
-    <div className={cx("relative flex shrink-0 items-center self-center opacity-0 transition-opacity group-hover:opacity-100", picker && "opacity-100")}>
-      <button className="icon-btn h-7 w-7" onClick={() => setPicker((p) => !p)} aria-label="React">
-        <SmilePlus size={16} />
+    <div
+      className={cx(
+        "relative flex shrink-0 items-center self-center opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100",
+        mine ? "flex-row" : "flex-row-reverse",
+        picker && "opacity-100",
+      )}
+    >
+      <button className="icon-btn h-8 w-8 text-ink" onClick={() => setPicker((p) => !p)} aria-label="React">
+        <SmilePlus size={18} strokeWidth={1.7} />
       </button>
-      <button className="icon-btn h-7 w-7" onClick={() => setReplyTo(msg)} aria-label="Reply">
-        <Reply size={16} />
+      <button className="icon-btn h-8 w-8 text-ink" onClick={() => setReplyTo(msg)} aria-label="Reply">
+        <Reply size={18} strokeWidth={1.7} />
       </button>
+      <Menu
+        align={mine ? "right" : "left"}
+        trigger={({ toggle }) => (
+          <button className="icon-btn h-8 w-8 text-ink" onClick={toggle} aria-label="More actions">
+            <Ellipsis size={20} />
+          </button>
+        )}
+        items={[
+          { label: "Reply", icon: <Reply />, onSelect: () => setReplyTo(msg) },
+          {
+            label: "Copy text",
+            icon: <Copy />,
+            hidden: !msg.body,
+            onSelect: () =>
+              navigator.clipboard.writeText(msg.body).then(
+                () => toast("Copied to clipboard"),
+                () => toast("Couldn't copy", { tone: "error" }),
+              ),
+          },
+          { label: "Message details", icon: <Info />, onSelect: () => openModal({ kind: "message-info", messageId: msg.id }) },
+        ]}
+      />
       {picker && (
         <div className={cx("absolute", mine ? "right-0" : "left-0")}>
           <ReactionPicker
@@ -289,7 +347,7 @@ export const MessageBubble = memo(function MessageBubble({ msg, ctx, isGroup, ca
           {...touch}
           className={cx(
             "w-fit max-w-full [-webkit-touch-callout:none]",
-            jumbo ? "px-1" : cx(imageOnly ? "p-[3px]" : "px-3 py-[7px]", radius, mine ? "bg-accent text-white" : "bg-bubble-in text-ink"),
+            jumbo || imageOnly ? (jumbo ? "px-1" : "") : cx("px-3 py-2", radius, mine ? "bg-accent text-white" : "bg-bubble-in text-ink"),
             failed && "opacity-70",
           )}
           style={mine ? { ["--status-bg" as string]: "var(--accent)", ["--status-check" as string]: "var(--accent)" } : undefined}
@@ -310,7 +368,7 @@ export const MessageBubble = memo(function MessageBubble({ msg, ctx, isGroup, ca
             <div className="flex flex-wrap items-end justify-end gap-x-2">
               {msg.body && (
                 <p className={cx("min-w-0 grow whitespace-pre-wrap text-left [overflow-wrap:anywhere]", jumbo ? "text-[40px] leading-[48px]" : "text-body")}>
-                  {msg.body}
+                  {body}
                 </p>
               )}
               {meta}

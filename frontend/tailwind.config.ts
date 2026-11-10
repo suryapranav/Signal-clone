@@ -27,6 +27,9 @@ export default {
         toast: token("toast"),
         "toast-ink": token("toast-ink"),
         online: token("online"),
+        raised: token("raised"),
+        chip: token("chip"),
+        "chip-ink": token("chip-ink"),
       },
       fontFamily: {
         sans: ['"Inter Variable"', "Inter", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "sans-serif"],

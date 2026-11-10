@@ -2,16 +2,17 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Signal's neutral palette: gray-02 #F6F6F6 … gray-95 #121212,
-   ultramarine #2C6BED for outgoing bubbles and primary actions. */
+/* Signal's palette. Dark values were sampled from Signal Desktop screenshots:
+   panes #1E1E1E, chat #191919, incoming bubble #323232, selection #313131.
+   Ultramarine #2C6BED for outgoing bubbles and primary actions. */
 :root {
   color-scheme: light;
-  --rail: #f6f6f6;
+  --rail: #ffffff;
   --pane: #ffffff;
   --chat: #ffffff;
   --line: #e9e9e9;
-  --hover: #f0f0f0;
-  --selected: #dedede;
+  --hover: #f2f2f2;
+  --selected: #e9e9e9;
   --ink: #1b1b1b;
   --ink-2: #5e5e5e;
   --ink-3: #848484;
@@ -21,54 +22,66 @@
   --accent-hover: #1851b4;
   --danger: #d92d20;
   --surface: #ffffff;
+  --raised: #ffffff;
   --toast: #3b3b3b;
   --toast-ink: #ffffff;
   --online: #4caf50;
+  --chip: #fbe6dc;
+  --hero-border: #e3e3e3;
+  --chip-ink: #a3482a;
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --rail: #1b1b1b;
-  --pane: #1b1b1b;
-  --chat: #121212;
-  --line: #2e2e2e;
-  --hover: #2e2e2e;
-  --selected: #3b3b3b;
+  --rail: #1e1e1e;
+  --pane: #1e1e1e;
+  --chat: #191919;
+  --line: #2c2b2b;
+  --hover: #282828;
+  --selected: #313131;
   --ink: #e9e9e9;
   --ink-2: #b9b9b9;
-  --ink-3: #848484;
-  --field: #2e2e2e;
-  --bubble-in: #3b3b3b;
+  --ink-3: #767676;
+  --field: #2c2c2c;
+  --bubble-in: #323232;
   --accent: #2c6bed;
   --accent-hover: #4a82f5;
   --danger: #f2614f;
   --surface: #2e2e2e;
+  --raised: #3b3b3b;
   --toast: #e9e9e9;
   --toast-ink: #1b1b1b;
   --online: #66bb6a;
+  --chip: #6b4f45;
+  --hero-border: #353535;
+  --chip-ink: #df9b82;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --rail: #1b1b1b;
-    --pane: #1b1b1b;
-    --chat: #121212;
-    --line: #2e2e2e;
-    --hover: #2e2e2e;
-    --selected: #3b3b3b;
+    --rail: #1e1e1e;
+    --pane: #1e1e1e;
+    --chat: #191919;
+    --line: #2c2b2b;
+    --hover: #282828;
+    --selected: #313131;
     --ink: #e9e9e9;
     --ink-2: #b9b9b9;
-    --ink-3: #848484;
-    --field: #2e2e2e;
-    --bubble-in: #3b3b3b;
+    --ink-3: #767676;
+    --field: #2c2c2c;
+    --bubble-in: #323232;
     --accent: #2c6bed;
     --accent-hover: #4a82f5;
     --danger: #f2614f;
     --surface: #2e2e2e;
+    --raised: #3b3b3b;
     --toast: #e9e9e9;
-  --toast-ink: #1b1b1b;
+    --toast-ink: #1b1b1b;
     --online: #66bb6a;
+    --chip: #6b4f45;
+    --hero-border: #353535;
+    --chip-ink: #df9b82;
   }
 }
 

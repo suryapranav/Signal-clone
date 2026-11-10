@@ -40,7 +40,8 @@ export function StatusIcon({ status, className }: { status: ClientMessageStatus;
       {[6, 12].map((c) =>
         filled ? (
           <g key={c}>
-            <circle cx={c} cy="6" r="5.4" fill="currentColor" />
+            {/* The front circle gets a ring in the background colour, so the two read as separate discs (as in Signal). */}
+            <circle cx={c} cy="6" r="5.4" fill="currentColor" stroke={c === 12 ? "var(--status-bg, transparent)" : "none"} strokeWidth="1.4" />
             <g stroke="var(--status-check, #fff)"><Check cx={c} /></g>
           </g>
         ) : (

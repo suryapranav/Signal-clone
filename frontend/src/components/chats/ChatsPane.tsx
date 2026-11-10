@@ -1,6 +1,6 @@
 "use client";
 
-import { Archive, ArrowLeft, AtSign, EllipsisVertical, Hash, ListFilter, Search, SquarePen, WifiOff, X } from "lucide-react";
+import { Archive, ArrowLeft, AtSign, Ellipsis, Hash, ListFilter, Search, SquarePen, WifiOff, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { sortConversations, startDirectChat } from "@/lib/actions";
 import { conversationTitle, isNoteToSelf, userName } from "@/lib/names";
@@ -30,10 +30,10 @@ export function SearchField({
 }) {
   return (
     <div className="relative flex-1">
-      <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-3" />
+      <Search size={16} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-2" />
       <input
         id={id}
-        className="input h-8 rounded-full pl-9 pr-8"
+        className="input h-7 rounded-lg pl-8 pr-8"
         placeholder={placeholder}
         value={value}
         autoFocus={autoFocus}
@@ -102,7 +102,7 @@ export function ChatsPane() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {archivedView ? (
-        <header className="flex h-14 shrink-0 items-center gap-2 px-2">
+        <header className="flex h-[60px] shrink-0 items-center gap-2 px-2">
           <button className="icon-btn" onClick={() => setLeftMode("list")} aria-label="Back to chats">
             <ArrowLeft size={20} />
           </button>
@@ -110,13 +110,13 @@ export function ChatsPane() {
         </header>
       ) : (
         <PaneHeader title="Chats">
-          <button className="icon-btn" title="New chat (Ctrl+Alt+N)" aria-label="New chat" onClick={() => setLeftMode("compose")}>
-            <SquarePen size={18} />
+          <button className="icon-btn h-9 w-9 text-ink" title="New chat (Ctrl+Alt+N)" aria-label="New chat" onClick={() => setLeftMode("compose")}>
+            <SquarePen size={19} strokeWidth={1.7} />
           </button>
           <Menu
             trigger={({ toggle }) => (
-              <button className="icon-btn" onClick={toggle} aria-label="More options">
-                <EllipsisVertical size={18} />
+              <button className="icon-btn h-9 w-9 text-ink" onClick={toggle} aria-label="More options">
+                <Ellipsis size={20} />
               </button>
             )}
             items={[
@@ -134,16 +134,16 @@ export function ChatsPane() {
         </div>
       )}
 
-      <div className="flex items-center gap-2 px-4 pb-3">
+      <div className="flex items-center gap-3 pb-3 pl-4 pr-3">
         <SearchField id="chat-search" value={query} onChange={setQuery} />
         <button
-          className={cx("icon-btn h-8 w-8", unreadOnly && "bg-accent text-white hover:bg-accent-hover hover:text-white")}
+          className={cx("icon-btn h-8 w-8 text-ink", unreadOnly && "bg-accent text-white hover:bg-accent-hover hover:text-white")}
           onClick={() => setUnreadOnly((v) => !v)}
           title="Filter by unread"
           aria-label="Filter by unread"
           aria-pressed={unreadOnly}
         >
-          <ListFilter size={16} />
+          <ListFilter size={19} strokeWidth={1.7} />
         </button>
       </div>
 

@@ -203,3 +203,21 @@ def test_empty_message_rejected(client):
     conv = _direct_with(client, a, b["_user"]["id"])
     r = client.post(f"/api/conversations/{conv['id']}/messages", json={"body": "   "}, headers=auth(a))
     assert r.status_code == 422
+
+
+def test_message_info(client):
+    a, b, p = login(client, ALICE), login(client, BOB), login(client, PRIYA)
+    g = client.post("/api/conversations/group",
+                    json={"title": "Info Group", "member_ids": [b["_user"]["id"], p["_user"]["id"]]}, headers=auth(a)).json()
+    msg = client.post(f"/api/conversations/{g['id']}/messages", json={"body": "who read this?"}, headers=auth(a)).json()
+    client.post(f"/api/conversations/{g['id']}/read", headers=auth(b))
+
+    info = client.get(f"/api/messages/{msg['id']}/info", headers=auth(a)).json()
+    by_name = {r["user"]["display_name"]: r for r in info["receipts"]}
+    assert by_name["Bob Martinez"]["read_at"] is not None
+    assert by_name["Priya Sharma"]["read_at"] is None
+    assert info["receipts"][0]["user"]["display_name"] == "Bob Martinez"  # readers first
+
+    # A recipient only sees their own receipt.
+    mine = client.get(f"/api/messages/{msg['id']}/info", headers=auth(p)).json()
+    assert [r["user"]["display_name"] for r in mine["receipts"]] == ["Priya Sharma"]

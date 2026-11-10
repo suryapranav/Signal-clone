@@ -87,7 +87,7 @@ function Page({ title, children }: { title: string; children: ReactNode }) {
   const setSection = useUI((s) => s.setSettingsSection);
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="flex h-14 shrink-0 items-center gap-2 border-b border-line px-2 md:px-6">
+      <header className="flex h-[60px] shrink-0 items-center gap-2 border-b border-line px-2 md:px-6">
         <button className="icon-btn md:hidden" onClick={() => setSection(null)} aria-label="Back to settings">
           <ArrowLeft size={20} />
         </button>

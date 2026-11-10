@@ -5,13 +5,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from ..database import get_db
-from ..models import Attachment, ConversationMember, Message, Reaction, User
+from ..models import Attachment, ConversationMember, Message, MessageReceipt, Reaction, User
 from ..realtime import manager
-from ..schemas import MessageCreateIn, MessageOut, MessagePage, ReactionIn
+from ..schemas import MessageCreateIn, MessageInfoOut, MessageOut, MessagePage, ReactionIn, ReceiptOut
 from ..security import current_user
 from ..services import conversations as svc
 from ..services.messaging import create_message, publish_message
-from ..services.serializers import message_out, messages_out, visible_window
+from ..services.serializers import message_out, messages_out, user_out, visible_window
 
 router = APIRouter(tags=["messages"])
 
@@ -75,6 +75,27 @@ async def send_message(
     )
     await publish_message(db, msg, conv)
     return message_out(db, msg, me.id)
+
+
+@router.get("/messages/{message_id}/info", response_model=MessageInfoOut)
+def message_info(message_id: int, me: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Per-recipient delivery and read times ("Message details" in the UI)."""
+    msg = db.get(Message, message_id)
+    if msg is None or msg.kind != "text":
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Message not found")
+    svc.get_membership(db, msg.conversation_id, me.id)  # 404 unless you're (or were) in the chat
+    q = (
+        select(MessageReceipt, User)
+        .join(User, User.id == MessageReceipt.user_id)
+        .where(MessageReceipt.message_id == msg.id)
+        .order_by(MessageReceipt.read_at.is_(None), MessageReceipt.read_at, User.display_name)
+    )
+    if msg.sender_id != me.id:
+        q = q.where(MessageReceipt.user_id == me.id)
+    receipts = [
+        ReceiptOut(user=user_out(u), delivered_at=r.delivered_at, read_at=r.read_at) for r, u in db.execute(q).all()
+    ]
+    return MessageInfoOut(message_id=msg.id, sent_at=msg.created_at, receipts=receipts)
 
 
 # ---------- reactions ----------

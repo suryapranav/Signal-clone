@@ -129,7 +129,7 @@ export function ConversationDetails({ convId }: { convId: number }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="flex h-14 shrink-0 items-center gap-2 border-b border-line px-2 md:px-3">
+      <header className="flex h-[60px] shrink-0 items-center gap-2 border-b border-line px-2 md:px-3">
         <button className="icon-btn" onClick={() => setDetailsOpen(false)} aria-label="Back to chat">
           <ArrowLeft size={20} />
         </button>

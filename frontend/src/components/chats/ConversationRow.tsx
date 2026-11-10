@@ -51,28 +51,31 @@ export const ConversationRow = memo(function ConversationRow({ conv, ctx, active
       onClick={() => openConversation(conv.id)}
       onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && openConversation(conv.id)}
       className={cx(
-        "group relative mx-2 flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 outline-none transition-colors",
+        "group relative mx-2.5 flex cursor-pointer items-center gap-3 rounded-xl px-3.5 py-3 outline-none transition-colors",
         active ? "bg-selected" : "hover:bg-hover focus-visible:bg-hover",
       )}
-      style={{ ["--status-bg" as string]: "var(--pane)", ["--status-check" as string]: "var(--pane)" }}
+      style={{
+        ["--status-bg" as string]: active ? "var(--selected)" : "var(--pane)",
+        ["--status-check" as string]: active ? "var(--selected)" : "var(--pane)",
+      }}
     >
       <ConversationAvatar conv={conv} ctx={ctx} size={48} showPresence />
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-2">
           <span className="flex min-w-0 items-center gap-1">
-            <span className={cx("truncate text-body", unread ? "font-semibold" : "font-medium")}>
+            <span className={cx("truncate text-[15px] leading-5", unread ? "font-bold" : "font-semibold")}>
               <Highlight text={title} query={highlight} />
             </span>
             {conv.is_muted && <BellOff size={13} className="shrink-0 text-ink-3" aria-label="Muted" />}
           </span>
           {last && (
-            <span className={cx("shrink-0 text-body-sm", unread ? "font-medium text-ink" : "text-ink-2")}>
+            <span className={cx("shrink-0 text-[13px] leading-5", unread ? "font-semibold text-ink" : "text-ink-2")}>
               {listTime(last.created_at, now)}
             </span>
           )}
         </div>
         <div className="mt-0.5 flex items-center gap-2">
-          <span className={cx("flex min-w-0 flex-1 items-center gap-1 text-[13px] leading-[18px]", unread ? "text-ink" : "text-ink-2")}>
+          <span className={cx("flex min-w-0 flex-1 items-center gap-1 text-body", unread ? "text-ink" : "text-ink-2")}>
             {typing ? (
               <TypingDots className="py-1.5 text-ink-3" />
             ) : (

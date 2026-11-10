@@ -4,6 +4,7 @@ import type {
   Contact,
   Conversation,
   Message,
+  MessageInfo,
   MessagePage,
   User,
 } from "./types";
@@ -124,6 +125,7 @@ export const api = {
     }
     return request<Attachment>("POST", "/attachments", form);
   },
+  messageInfo: (messageId: number) => request<MessageInfo>("GET", `/messages/${messageId}/info`),
   react: (messageId: number, emoji: string) => request<void>("PUT", `/messages/${messageId}/reaction`, { emoji }),
   unreact: (messageId: number) => request<void>("DELETE", `/messages/${messageId}/reaction`),
 };

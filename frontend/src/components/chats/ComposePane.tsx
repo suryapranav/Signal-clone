@@ -63,7 +63,7 @@ export function ComposePane() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <header className="flex h-14 shrink-0 items-center gap-2 px-2">
+      <header className="flex h-[60px] shrink-0 items-center gap-2 px-2">
         <button className="icon-btn" onClick={() => setLeftMode("list")} aria-label="Back">
           <ArrowLeft size={20} />
         </button>

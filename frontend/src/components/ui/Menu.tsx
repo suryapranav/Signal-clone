@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { cx } from "@/lib/utils";
 
 export interface MenuItem {
@@ -24,7 +24,19 @@ export function Menu({
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [up, setUp] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const list = useRef<HTMLDivElement>(null);
+
+  // Open upwards when there isn't room below (e.g. the newest message, above the composer).
+  // Scrolling areas like the message list clip their content, so measure against them.
+  useLayoutEffect(() => {
+    if (!open || !list.current || !ref.current) return;
+    const bounds = ref.current.closest("[role=log]")?.getBoundingClientRect() ?? { top: 0, bottom: window.innerHeight };
+    const trigger = ref.current.getBoundingClientRect();
+    const height = list.current.offsetHeight;
+    setUp(trigger.bottom + height + 8 > bounds.bottom && trigger.top - height - 8 > bounds.top);
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -43,9 +55,11 @@ export function Menu({
       {trigger({ open, toggle: () => setOpen((o) => !o) })}
       {open && (
         <div
+          ref={list}
           role="menu"
           className={cx(
-            "absolute top-full z-40 mt-1 min-w-[200px] animate-pop-in rounded-xl bg-pane py-1.5 shadow-pop",
+            "absolute z-40 min-w-[200px] animate-pop-in rounded-xl bg-pane py-1.5 shadow-pop",
+            up ? "bottom-full mb-1" : "top-full mt-1",
             align === "right" ? "right-0" : "left-0",
           )}
         >

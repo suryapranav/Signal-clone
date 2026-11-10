@@ -4,15 +4,16 @@ import { Download, Rocket, ShieldCheck, X } from "lucide-react";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { api, ApiError } from "@/lib/api";
 import { startDirectChat } from "@/lib/actions";
-import { formatPhone } from "@/lib/format";
+import { formatPhone, fullDateTime } from "@/lib/format";
 import { directPeer, userName } from "@/lib/names";
-import type { AvatarColor, User } from "@/lib/types";
+import type { AvatarColor, MessageInfo, User } from "@/lib/types";
 import { useNames } from "@/hooks/useNames";
 import { useChat } from "@/store/chat";
 import { toast, useUI, type Modal as ModalState } from "@/store/ui";
 import { ContactPicker } from "../chats/NewGroupPane";
 import { AvatarPicker } from "../settings/AvatarPicker";
 import { Avatar } from "../ui/Avatar";
+import { StatusIcon } from "../ui/StatusIcon";
 import { Switch } from "../ui/Switch";
 import { Modal } from "../ui/Modal";
 
@@ -236,6 +237,58 @@ function SafetyNumberModal({ convId, onClose }: Of<"safety-number"> & { onClose:
   );
 }
 
+/** Signal's "Message details": when it was sent, and who has received / read it. */
+function MessageInfoModal({ messageId, onClose }: { messageId: number; onClose: () => void }) {
+  const ctx = useNames();
+  const [info, setInfo] = useState<MessageInfo | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    api.messageInfo(messageId).then(setInfo, (e) => setError(e instanceof ApiError ? e.message : "Couldn't load details"));
+  }, [messageId]);
+
+  const groups = info
+    ? ([
+        ["Read by", "read", info.receipts.filter((r) => r.read_at)],
+        ["Delivered to", "delivered", info.receipts.filter((r) => r.delivered_at && !r.read_at)],
+        ["Sent to", "sent", info.receipts.filter((r) => !r.delivered_at)],
+      ] as const)
+    : [];
+
+  return (
+    <Modal title="Message details" onClose={onClose}>
+      {error && <p className="text-body text-danger">{error}</p>}
+      {!info && !error && <p className="py-6 text-center text-body text-ink-2">Loading…</p>}
+      {info && (
+        <div className="space-y-5 pb-1">
+          <p className="text-body">
+            <span className="text-ink-2">Sent </span>
+            {fullDateTime(info.sent_at)}
+          </p>
+          {info.receipts.length === 0 && <p className="text-body text-ink-2">No other recipients.</p>}
+          {groups.map(([title, status, rows]) =>
+            rows.length ? (
+              <section key={title}>
+                <h3 className="mb-1 flex items-center gap-2 text-body-sm font-semibold text-ink-2">
+                  <StatusIcon status={status} className="text-ink-2" /> {title}
+                </h3>
+                {rows.map((r) => (
+                  <div key={r.user.id} className="flex items-center gap-3 py-1.5">
+                    <Avatar name={r.user.display_name} color={r.user.avatar_color} url={r.user.avatar_url} size={32} />
+                    <span className="min-w-0 flex-1 truncate">{r.user.id === ctx.meId ? "You" : userName(ctx, r.user.id)}</span>
+                    <span className="shrink-0 text-body-sm text-ink-2">
+                      {r.read_at ? fullDateTime(r.read_at) : r.delivered_at ? fullDateTime(r.delivered_at) : "Not yet delivered"}
+                    </span>
+                  </div>
+                ))}
+              </section>
+            ) : null,
+          )}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
 /** Full-screen photo viewer, closed by Esc, the X, or clicking the backdrop. */
 function ImageViewer({ url, filename, onClose }: { url: string; filename: string; onClose: () => void }) {
   useEffect(() => {
@@ -300,6 +353,8 @@ export function Modals() {
       );
     case "image":
       return <ImageViewer url={modal.url} filename={modal.filename} onClose={close} />;
+    case "message-info":
+      return <MessageInfoModal messageId={modal.messageId} onClose={close} />;
     case "shortcuts":
       return (
         <Modal title="Keyboard shortcuts" onClose={close}>

@@ -8,8 +8,8 @@ import { Avatar } from "../ui/Avatar";
 
 export function PaneHeader({ title, children }: { title: string; children?: React.ReactNode }) {
   return (
-    <header className="flex h-14 shrink-0 items-center justify-between px-4">
-      <h1 className="text-[20px] font-semibold">{title}</h1>
+    <header className="flex h-[60px] shrink-0 items-center justify-between pl-6 pr-3">
+      <h1 className="text-[20px] font-bold">{title}</h1>
       <div className="flex items-center gap-1">{children}</div>
     </header>
   );

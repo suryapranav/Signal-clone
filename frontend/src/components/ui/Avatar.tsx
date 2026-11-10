@@ -25,8 +25,9 @@ export function Avatar({ name, color, url, size = 48, variant = "person", online
         <img src={url} alt="" className="h-full w-full rounded-full object-cover" />
       ) : (
         <div
-          className="flex h-full w-full select-none items-center justify-center rounded-full font-medium"
-          style={{ background: bg, color: fg, fontSize: Math.max(10, Math.round(size * 0.38)) }}
+          className="flex h-full w-full select-none items-center justify-center rounded-full font-normal"
+          // Signal draws initials large and in regular weight: one letter at about half the avatar, two a bit smaller.
+          style={{ background: bg, color: fg, fontSize: Math.max(10, Math.round(size * (initials(name).length > 1 ? 0.42 : 0.5))) }}
           aria-hidden
         >
           {variant === "group" ? (

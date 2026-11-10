@@ -16,6 +16,7 @@ export type Modal =
   | { kind: "coming-soon"; feature: string }
   | { kind: "shortcuts" }
   | { kind: "image"; url: string; filename: string }
+  | { kind: "message-info"; messageId: number }
   | {
       kind: "confirm";
       title: string;
@@ -45,6 +46,10 @@ interface UIState {
   focusMessageId: number | null;
   /** Open settings page; null = the section list (on mobile). */
   settingsSection: SettingsSection | null;
+  /** Text being searched for inside the open chat ("" = not searching). */
+  chatSearch: string;
+  /** Nav rail shows labels next to its icons (the hamburger toggles it). */
+  navExpanded: boolean;
   /** File attached in the composer but not sent yet (picked, pasted or dropped). */
   pendingFile: { convId: number; file: OutgoingFile } | null;
 
@@ -60,10 +65,13 @@ interface UIState {
   focusMessage(id: number | null): void;
   setSettingsSection(section: SettingsSection | null): void;
   setPendingFile(pending: { convId: number; file: OutgoingFile } | null): void;
+  toggleNav(): void;
+  setChatSearch(query: string): void;
   reset(): void;
 }
 
 const THEME_KEY = "signal.theme";
+const NAV_KEY = "signal.nav-expanded";
 
 export function applyTheme(theme: Theme) {
   const root = document.documentElement;
@@ -90,11 +98,19 @@ const initial = {
   focusMessageId: null,
   settingsSection: null as SettingsSection | null,
   pendingFile: null,
+  chatSearch: "",
 };
 
 export const useUI = create<UIState>((set, get) => ({
   ...initial,
   theme: typeof window === "undefined" ? "system" : storedTheme(),
+  navExpanded: (() => {
+    try {
+      return localStorage.getItem(NAV_KEY) === "1";
+    } catch {
+      return false;
+    }
+  })(),
 
   setTab: (tab) => set({ tab, leftMode: "list" }),
   setLeftMode: (leftMode) => set({ leftMode }),
@@ -123,6 +139,16 @@ export const useUI = create<UIState>((set, get) => ({
   focusMessage: (focusMessageId) => set({ focusMessageId }),
   setSettingsSection: (settingsSection) => set({ settingsSection }),
   setPendingFile: (pendingFile) => set({ pendingFile }),
+  setChatSearch: (chatSearch) => set({ chatSearch }),
+  toggleNav: () => {
+    const navExpanded = !get().navExpanded;
+    try {
+      localStorage.setItem(NAV_KEY, navExpanded ? "1" : "0");
+    } catch {
+      /* not persisted in private mode */
+    }
+    set({ navExpanded });
+  },
   reset: () => set(initial),
 }));
 

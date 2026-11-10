@@ -90,6 +90,12 @@ export interface Conversation {
   last_message: Message | null;
 }
 
+export interface MessageInfo {
+  message_id: number;
+  sent_at: string;
+  receipts: { user: User; delivered_at: string | null; read_at: string | null }[];
+}
+
 export interface MessagePage {
   messages: Message[];
   has_more: boolean;

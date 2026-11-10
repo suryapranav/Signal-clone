@@ -24,6 +24,7 @@ export function openConversation(id: number | null) {
     leftMode: ui.leftMode === "archived" ? "archived" : "list",
     detailsOpen: false,
     replyTo: null,
+    chatSearch: "",
   });
   useChat.getState().open(id);
 }

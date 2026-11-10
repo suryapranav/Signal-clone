@@ -7,8 +7,13 @@ const DAY = 24 * HOUR;
 const time = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
 const weekday = new Intl.DateTimeFormat(undefined, { weekday: "short" });
 const monthDay = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
-const fullDate = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" });
-const longDay = new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric" });
+const dayMonthYear = new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short", year: "numeric" });
+const dateTime = new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" });
+
+/** "24 May 2025, 00:44" (in the viewer's locale), for message details. */
+export function fullDateTime(iso: string): string {
+  return dateTime.format(new Date(iso));
+}
 
 function startOfDay(d: Date) {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
@@ -26,8 +31,7 @@ export function listTime(iso: string, now = Date.now()): string {
   if (diff < HOUR) return `${Math.floor(diff / MINUTE)}m`;
   if (startOfDay(d) === startOfDay(new Date(now))) return time.format(d);
   if (diff < 6 * DAY) return weekday.format(d);
-  if (d.getFullYear() === new Date(now).getFullYear()) return monthDay.format(d);
-  return fullDate.format(d);
+  return dayMonthYear.format(d); // "31 Aug 2025", as Signal's chat list shows
 }
 
 /** Timestamp inside a message bubble. */
@@ -38,15 +42,15 @@ export function bubbleTime(iso: string, now = Date.now()): string {
   return time.format(new Date(iso));
 }
 
-/** Date separator between messages from different days. */
+/** Date separator between messages from different days: "Today",
+ *  "Yesterday", a weekday within the week, then "24 May 2025" as in Signal. */
 export function dayLabel(iso: string, now = Date.now()): string {
   const day = startOfDay(new Date(iso));
   const today = startOfDay(new Date(now));
   if (day === today) return "Today";
   if (day === today - DAY) return "Yesterday";
   if (today - day < 6 * DAY) return new Intl.DateTimeFormat(undefined, { weekday: "long" }).format(new Date(iso));
-  if (new Date(iso).getFullYear() === new Date(now).getFullYear()) return longDay.format(new Date(iso));
-  return fullDate.format(new Date(iso));
+  return dayMonthYear.format(new Date(iso));
 }
 
 export function lastSeen(iso: string | null, now = Date.now()): string {
