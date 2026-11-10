@@ -1,8 +1,9 @@
 import { create } from "zustand";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import { realtime, type ConnectionState } from "@/lib/socket";
 import type { Attachment, Contact, Conversation, Message, MessageStatus, ServerEvent, User } from "@/lib/types";
 import { uid } from "@/lib/utils";
+import { toast } from "./ui";
 
 /** A message as the UI holds it: server fields plus client-only send state. */
 export type UIMessage = Message & { localStatus?: "sending" | "failed" };
@@ -109,6 +110,23 @@ function withUsers(users: Record<number, User>, list: User[]): Record<number, Us
   return next;
 }
 
+class SendError extends Error {
+  constructor(message: string, public cause: unknown) {
+    super(message);
+  }
+}
+
+/** A readable reason for a failed send, e.g. "Couldn't upload the attachment: Files can be up to 5 MB". */
+function describeSendError(e: unknown): string {
+  const prefix = e instanceof SendError ? e.message : "Message not sent";
+  const root = e instanceof SendError ? e.cause : e;
+  if (root instanceof ApiError) {
+    if (root.status === 404 || root.status === 405) return `${prefix}: the server doesn't support this yet (is the backend up to date?)`;
+    return `${prefix}: ${root.message}`;
+  }
+  return `${prefix}: can't reach the server`;
+}
+
 const emptyThread: Thread = { items: [], hasMore: false, loading: false, loaded: false };
 
 const initial = {
@@ -179,12 +197,19 @@ export const useChat = create<ChatState>((set, get) => {
     try {
       const pending = outbox.get(clientId);
       if (pending && pending.uploadedId == null) {
-        pending.uploadedId = (await api.uploadAttachment(pending.file, pending.size)).id;
+        try {
+          pending.uploadedId = (await api.uploadAttachment(pending.file, pending.size)).id;
+        } catch (e) {
+          throw new SendError("Couldn't upload the attachment", e);
+        }
       }
       const saved = await api.sendMessage(convId, body, clientId, replyToId, pending?.uploadedId);
       outbox.delete(clientId);
       ingest(saved);
-    } catch {
+    } catch (e) {
+      // Say why, so a failed send is never a silent mystery.
+      console.error("send failed", e);
+      toast(describeSendError(e), { tone: "error", ms: 6000 });
       set((s) => {
         const thread = s.threads[convId];
         if (!thread) return {};
