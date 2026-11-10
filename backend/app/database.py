@@ -1,7 +1,7 @@
 """SQLAlchemy engine, session factory and declarative base.
 
-Runs on SQLite (local development, tests, zero-config demo) or Postgres
-(production, so data survives restarts), chosen by DATABASE_URL.
+Runs on SQLite, as the brief specifies (local development, tests and the
+deployed demo). The same code can optionally run on Postgres via DATABASE_URL.
 """
 
 from collections.abc import Iterator
@@ -16,7 +16,7 @@ from .config import settings
 
 
 def normalize_url(url: str) -> str:
-    """Hosts like Neon and Render hand out `postgres://…` / `postgresql://…`;
+    """Postgres hosts hand out `postgres://…` / `postgresql://…` URLs;
     SQLAlchemy needs the driver named explicitly (psycopg 3)."""
     for prefix in ("postgres://", "postgresql://"):
         if url.startswith(prefix):

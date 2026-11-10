@@ -8,10 +8,10 @@ def _bool(name: str, default: bool) -> bool:
 
 
 class Settings:
-    # SQLite file by default; a postgres:// URL (e.g. from Neon) in production.
+    # SQLite, as the brief specifies. A postgres:// URL also works (optional).
     # On an empty database the tables are created and seeded on boot (see
     # main.lifespan), so SQLite on an ephemeral disk re-seeds every restart.
-    database_url: str = os.getenv("DATABASE_URL", "sqlite:///./signal.db")
+    database_url: str = os.getenv("DATABASE_URL") or "sqlite:///./signal.db"  # unset or empty → SQLite
 
     # Comma-separated list of allowed frontend origins.
     cors_origins: list[str] = [

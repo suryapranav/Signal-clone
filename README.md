@@ -5,9 +5,9 @@
 A functional clone of the Signal messenger: phone-number onboarding, contacts, 1:1 and group chats, and real-time messaging with sent / delivered / read receipts, typing indicators and presence.
 
 - **Frontend:** Next.js 15 (App Router, TypeScript), Tailwind CSS, Zustand
-- **Backend:** FastAPI, SQLAlchemy 2.0, SQLite locally or Postgres in production
+- **Backend:** FastAPI, SQLAlchemy 2.0, SQLite (as the brief specifies; the same code can also run on Postgres)
 - **Real-time:** a single WebSocket per client (FastAPI / Starlette)
-- **Tests:** pytest for the API and WebSocket flows (run on SQLite and Postgres), Playwright for two-user browser flows, all in CI
+- **Tests:** pytest for the API and WebSocket flows (run on SQLite, and on Postgres to keep the optional support honest), Playwright for two-user browser flows, all in CI
 
 > **Live demo:** https://signal-clone-self.vercel.app · **API docs:** https://signal-clone-api-rcv0.onrender.com/docs
 >
@@ -67,7 +67,7 @@ TEST_DATABASE_URL=postgresql://user:pass@localhost/signal_test pytest   # same s
 python -m app.seed --reset                # wipe and re-seed the database
 ```
 
-The database (`backend/signal.db`) is created and seeded automatically on first start. To use Postgres instead, set `DATABASE_URL` (for example `postgresql://user:pass@localhost/signal`); the tables are created and seeded the same way.
+The database (`backend/signal.db`) is created and seeded automatically on first start. The app is built and deployed on SQLite. It can optionally run on Postgres by setting `DATABASE_URL` (for example `postgresql://user:pass@localhost/signal`); the tables are created and seeded the same way.
 
 **Frontend** (Node 18.18+):
 
@@ -230,7 +230,7 @@ erDiagram
 - **Read receipts are a two-way privacy setting.** A read only counts toward "read" if the reader has receipts on, and a sender who turned them off never sees "read". The rule lives in the one query that computes statuses, so ticks, group status and Message details all follow it.
 - **Only a hash of the session token is stored**, so a leaked database doesn't leak working sessions. Logout deletes the session row.
 - **Attachments are uploaded first and linked when the message is sent.** Only the uploader can attach a file, and only once (`message_id` is UNIQUE). The bytes live in a deferred BLOB column, so message lists never load file contents. Image width and height are stored so the client can reserve space before the image loads, which keeps the chat from jumping.
-- **The same schema runs on SQLite and Postgres.** SQLite keeps local setup to zero steps; Postgres (via `DATABASE_URL`) keeps data across restarts in production. CI runs the backend suite on both.
+- **SQLite, with portable SQL.** The brief specifies SQLite, and the demo runs on it. Everything goes through SQLAlchemy with no SQLite-only queries, so the same schema also runs on Postgres by changing `DATABASE_URL`; CI runs the backend suite on both to keep it that way.
 - **Foreign keys are enforced** (Postgres always; SQLite with `PRAGMA foreign_keys=ON`) with explicit `ON DELETE` behaviour: receipts, reactions and attachments cascade with their message, and replies keep existing with `reply_to_id` set to NULL.
 
 ## API overview
@@ -341,13 +341,12 @@ GitHub Actions (`.github/workflows/ci.yml`) runs four jobs on every push:
 **Backend → Render** (free web service). The repo includes a `render.yaml` blueprint:
 1. New → Blueprint → select this repo. It builds `backend/` and starts `uvicorn app.main:app`.
 2. Any `*.vercel.app` frontend is already allowed by `CORS_ORIGIN_REGEX`. For a custom domain, add it to `CORS_ORIGINS`.
-3. **Persistent data (recommended):** create a free Postgres database (for example on [Neon](https://neon.tech)), and set its connection string as `DATABASE_URL` on the Render service. On first boot the app creates the tables and seeds the demo data once; after that, messages and accounts survive restarts and redeploys.
 
 **Frontend → Vercel:**
 1. Import the repo and set **Root Directory** to `frontend`.
 2. Add the environment variable `NEXT_PUBLIC_API_URL=https://<your-render-service>.onrender.com`.
 
-Render's free tier sleeps after inactivity, and the first request takes about 50 seconds to wake it. Without `DATABASE_URL` the backend falls back to SQLite on Render's ephemeral disk, so the demo data is re-seeded on each restart.
+Render's free tier sleeps after inactivity, and the first request takes about 50 seconds to wake it. The SQLite file lives on Render's ephemeral disk, so the demo data is re-seeded on each restart or redeploy. Mounting a persistent disk (a paid Render feature) at the database path would keep it.
 
 ## Assumptions and mocks
 
@@ -357,7 +356,7 @@ Render's free tier sleeps after inactivity, and the first request takes about 50
 - **Online / last seen** is real for connected users (based on open sockets); seeded users who never connect show a seeded "last seen" time.
 - **Profile photos and attachments are stored in the database** (photos as data URLs up to ~400 KB, attachments as BLOBs up to 5 MB, one per message). This keeps deployment to an API plus a database, with no separate file storage.
 - **Single backend instance:** the WebSocket registry is in memory.
-- **Tables are created on startup** (`create_all`) rather than through migrations. Because the schema only grows, a small startup step (`add_missing_columns` in `database.py`) adds any new nullable column an existing database lacks, so a Postgres database created before a feature keeps working after a deploy.
+- **Tables are created on startup** (`create_all`) rather than through migrations. Because the schema only grows, a small startup step (`add_missing_columns` in `database.py`) adds any new nullable column an existing database lacks, so a database created before a feature keeps working after an upgrade.
 - **Edit and delete for everyone are limited to 24 hours after sending.** There's no edit history; the latest text replaces the old one.
 - **Disappearing timers start when a message is sent** (Signal starts them when the message is read), which keeps the logic server-side and deterministic.
 

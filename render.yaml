@@ -14,7 +14,3 @@ services:
         value: 3.12.7
       - key: CORS_ORIGINS
         value: http://localhost:3000
-      # Postgres connection string (e.g. from Neon). Leave unset to use SQLite,
-      # which Render's free tier wipes on every restart.
-      - key: DATABASE_URL
-        sync: false
