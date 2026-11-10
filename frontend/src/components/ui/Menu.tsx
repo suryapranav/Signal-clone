@@ -25,6 +25,7 @@ export function Menu({
 }) {
   const [open, setOpen] = useState(false);
   const [up, setUp] = useState(false);
+  const [shiftX, setShiftX] = useState(0);
   const ref = useRef<HTMLDivElement>(null);
   const list = useRef<HTMLDivElement>(null);
 
@@ -32,10 +33,20 @@ export function Menu({
   // Scrolling areas like the message list clip their content, so measure against them.
   useLayoutEffect(() => {
     if (!open || !list.current || !ref.current) return;
-    const bounds = ref.current.closest("[role=log]")?.getBoundingClientRect() ?? { top: 0, bottom: window.innerHeight };
+    const bounds = ref.current.closest("[role=log]")?.getBoundingClientRect() ?? {
+      top: 0,
+      bottom: window.innerHeight,
+      left: 0,
+      right: window.innerWidth,
+    };
     const trigger = ref.current.getBoundingClientRect();
     const height = list.current.offsetHeight;
     setUp(trigger.bottom + height + 8 > bounds.bottom && trigger.top - height - 8 > bounds.top);
+    // On narrow screens a menu anchored to one edge can run off the other; nudge it back in.
+    const box = list.current.getBoundingClientRect();
+    const left = Math.max(bounds.left, 0) + 8;
+    const right = Math.min(bounds.right, window.innerWidth) - 8;
+    setShiftX(box.left < left ? left - box.left : box.right > right ? right - box.right : 0);
   }, [open]);
 
   useEffect(() => {
@@ -52,7 +63,13 @@ export function Menu({
 
   return (
     <div ref={ref} className={cx("relative", className)}>
-      {trigger({ open, toggle: () => setOpen((o) => !o) })}
+      {trigger({
+        open,
+        toggle: () => {
+          setShiftX(0);
+          setOpen((o) => !o);
+        },
+      })}
       {open && (
         <div
           ref={list}
@@ -62,6 +79,7 @@ export function Menu({
             up ? "bottom-full mb-1" : "top-full mt-1",
             align === "right" ? "right-0" : "left-0",
           )}
+          style={shiftX ? { translate: `${shiftX}px 0` } : undefined}
         >
           {items
             .filter((i) => !i.hidden)

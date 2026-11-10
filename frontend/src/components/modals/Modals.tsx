@@ -297,7 +297,7 @@ function ImageViewer({ url, filename, onClose }: { url: string; filename: string
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-black/90" onMouseDown={(e) => e.target === e.currentTarget && onClose()} role="dialog" aria-label={filename}>
+    <div className="fixed inset-0 z-50 flex flex-col bg-black/95 backdrop-blur-sm" onMouseDown={(e) => e.target === e.currentTarget && onClose()} role="dialog" aria-label={filename}>
       <div className="flex items-center justify-between gap-4 px-4 py-3 text-white">
         <span className="truncate text-body">{filename}</span>
         <div className="flex items-center gap-1">

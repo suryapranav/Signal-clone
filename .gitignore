@@ -20,3 +20,8 @@ next-env.d.ts
 
 # OS
 .DS_Store
+
+# Browser tests
+.next-e2e/
+frontend/test-results/
+frontend/playwright-report/

@@ -69,7 +69,13 @@ export const ConversationRow = memo(function ConversationRow({ conv, ctx, active
             {conv.is_muted && <BellOff size={13} className="shrink-0 text-ink-3" aria-label="Muted" />}
           </span>
           {last && (
-            <span className={cx("shrink-0 text-[13px] leading-5", unread ? "font-semibold text-ink" : "text-ink-2")}>
+            <span
+              className={cx(
+                // the options chevron takes this spot while the row is hovered or its menu is open
+                "shrink-0 text-[13px] leading-5 transition-opacity group-hover:opacity-0 group-has-[[role=menu]]:opacity-0",
+                unread ? "font-semibold text-ink" : "text-ink-2",
+              )}
+            >
               {listTime(last.created_at, now)}
             </span>
           )}
@@ -88,7 +94,10 @@ export const ConversationRow = memo(function ConversationRow({ conv, ctx, active
           </span>
           {conv.is_pinned && !unread && <Pin size={13} className="shrink-0 rotate-45 text-ink-3" aria-label="Pinned" />}
           {unread && (
-            <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-accent px-1.5 text-[11px] font-semibold text-white">
+            <span
+              className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-accent px-1.5 text-[11px] font-semibold text-white"
+              aria-label={`${conv.unread_count} unread`}
+            >
               {conv.unread_count}
             </span>
           )}

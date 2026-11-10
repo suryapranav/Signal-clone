@@ -3,9 +3,9 @@ import tempfile
 
 import pytest
 
-# Point the app at a throwaway database before it is imported.
-_db = os.path.join(tempfile.mkdtemp(), "test.db")
-os.environ["DATABASE_URL"] = f"sqlite:///{_db}"
+# Point the app at a throwaway database before it is imported. Set
+# TEST_DATABASE_URL to run the same suite against Postgres (CI does).
+os.environ["DATABASE_URL"] = os.environ.get("TEST_DATABASE_URL") or f"sqlite:///{os.path.join(tempfile.mkdtemp(), 'test.db')}"
 os.environ["PURGE_INTERVAL_SECONDS"] = "1"
 
 from fastapi.testclient import TestClient  # noqa: E402
@@ -15,6 +15,9 @@ from app.main import app  # noqa: E402
 
 @pytest.fixture(scope="session")
 def client():
+    from app.database import Base, engine
+
+    Base.metadata.drop_all(engine)  # start from an empty schema (the app re-creates and seeds it)
     with TestClient(app) as c:
         yield c
 

@@ -5,8 +5,9 @@
 A functional clone of the Signal messenger: phone-number onboarding, contacts, 1:1 and group chats, and real-time messaging with sent / delivered / read receipts, typing indicators and presence.
 
 - **Frontend:** Next.js 15 (App Router, TypeScript), Tailwind CSS, Zustand
-- **Backend:** FastAPI, SQLAlchemy 2.0, SQLite
+- **Backend:** FastAPI, SQLAlchemy 2.0, SQLite locally or Postgres in production
 - **Real-time:** a single WebSocket per client (FastAPI / Starlette)
+- **Tests:** pytest for the API and WebSocket flows (run on SQLite and Postgres), Playwright for two-user browser flows, all in CI
 
 > **Live demo:** https://signal-clone-self.vercel.app · **API docs:** https://signal-clone-api-rcv0.onrender.com/docs
 >
@@ -17,7 +18,7 @@ A functional clone of the Signal messenger: phone-number onboarding, contacts, 1
 **Core**
 - **Onboarding:** phone number → 6-digit code (mocked, `123456`) → profile (name, photo or avatar color). Sessions persist across reloads; log out from Settings.
 - **Chat list:** sorted by latest activity with pinned chats first, last-message preview with your own message's receipt icon, unread badges, online dots, live "typing" dots, search across chats and contacts, an unread-only filter, and archive, pin and mute from each row's menu.
-- **1:1 messaging:** real-time delivery, timestamps, typing indicators, and Signal's sending / sent / delivered / read circles. Sends are optimistic and can be retried if they fail.
+- **1:1 messaging:** real-time delivery, timestamps, typing indicators, and Signal's sending / sent / delivered / read circles. Sends are optimistic and can be retried if they fail. Opening a chat jumps to an "N unread messages" divider, and **Message details** shows who each message was delivered to and read by, and when.
 - **Groups:** create with a name, color and members; view members; admins can add or remove members, promote or demote admins, and edit the name and description; any member can leave. Every change appears as a system message ("Alice added Bob.") worded from each viewer's point of view.
 - **Contacts:** add by phone number or username, start chats from contacts, and an "Add to contacts" prompt for people you've chatted with but not saved.
 - **Signal experience:** nav rail with Chats, Calls and Stories; three-pane layout; grouped message bubbles with sender names and avatars in groups; date separators; conversation header with presence or last seen; chat and group settings pages; modals; toasts; settings pages (profile, appearance, chats, notifications, privacy, linked devices).
@@ -29,6 +30,7 @@ A functional clone of the Signal messenger: phone-number onboarding, contacts, 1
 - Disappearing messages that actually work (per-chat timer; messages count down and are deleted on the server)
 - Dark mode (System, Light or Dark)
 - Responsive layout: single pane with back navigation on phones
+- Search inside a chat, with matches highlighted and up/down to step through them
 - Keyboard shortcuts: `Ctrl/⌘ K` search · `Ctrl/⌘ Alt N` new chat · `Alt ↑/↓` switch chats · `Esc` cancel reply or close panel · `Ctrl/⌘ /` list all shortcuts
 - Jumbo emoji, emoji picker, per-chat drafts, unread count in the tab title, and in-app message notifications
 
@@ -58,11 +60,12 @@ cd backend
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt
 uvicorn app.main:app --reload            # http://localhost:8000, docs at /docs
-pytest                                    # end-to-end REST + WebSocket tests
+pytest                                    # REST + WebSocket tests (SQLite)
+TEST_DATABASE_URL=postgresql://user:pass@localhost/signal_test pytest   # same suite on Postgres
 python -m app.seed --reset                # wipe and re-seed the database
 ```
 
-The database (`backend/signal.db`) is created and seeded automatically on first start.
+The database (`backend/signal.db`) is created and seeded automatically on first start. To use Postgres instead, set `DATABASE_URL` (for example `postgresql://user:pass@localhost/signal`); the tables are created and seeded the same way.
 
 **Frontend** (Node 18.18+):
 
@@ -73,6 +76,16 @@ npm install
 npm run dev                               # http://localhost:3000
 ```
 
+**Browser tests** (Playwright):
+
+```bash
+cd frontend
+npx playwright install chromium           # once
+npm run test:e2e                          # needs the backend's Python packages installed
+```
+
+The browser tests start their own backend (with a fresh SQLite database) and a production build of the frontend on ports 8010 and 3010, so they don't touch your dev servers or data. They cover sign-up, two people chatting live (typing, receipts, reactions, replies, message details), unread counts, groups and member removal, attachments, disappearing messages, search and archive, and the phone layout. Any browser console error fails the test.
+
 ## Architecture
 
 ```
@@ -81,7 +94,7 @@ Browser (Next.js)                          FastAPI (single process)
 │ UI components        │ ───────────────▶ │ routers/   HTTP + validation  │
 │ Zustand store        │                  │ services/  business rules     │
 │ api.ts / socket.ts   │ ◀─── WS /ws ──── │ realtime   socket registry    │
-└──────────────────────┘   server pushes  │ models     SQLAlchemy → SQLite│
+└──────────────────────┘   server pushes  │ models     SQLAlchemy → DB    │
                                           └───────────────────────────────┘
 ```
 
@@ -210,7 +223,8 @@ erDiagram
 - **System messages** ("Alice added Bob") are rows with `kind = 'system'`, an event key in `body` and details in `meta`. The client renders them from the viewer's perspective ("You added Bob" vs "Alice added Bob").
 - **Only a hash of the session token is stored**, so a leaked database doesn't leak working sessions. Logout deletes the session row.
 - **Attachments are uploaded first and linked when the message is sent.** Only the uploader can attach a file, and only once (`message_id` is UNIQUE). The bytes live in a deferred BLOB column, so message lists never load file contents. Image width and height are stored so the client can reserve space before the image loads, which keeps the chat from jumping.
-- **Foreign keys are enforced** (`PRAGMA foreign_keys=ON`) with explicit `ON DELETE` behaviour: receipts, reactions and attachments cascade with their message, and replies keep existing with `reply_to_id` set to NULL.
+- **The same schema runs on SQLite and Postgres.** SQLite keeps local setup to zero steps; Postgres (via `DATABASE_URL`) keeps data across restarts in production. CI runs the backend suite on both.
+- **Foreign keys are enforced** (Postgres always; SQLite with `PRAGMA foreign_keys=ON`) with explicit `ON DELETE` behaviour: receipts, reactions and attachments cascade with their message, and replies keep existing with `reply_to_id` set to NULL.
 
 ## API overview
 
@@ -240,6 +254,7 @@ All endpoints are under `/api` and take `Authorization: Bearer <token>`, except 
 | POST | `/attachments` | Upload a file (multipart, max 5 MB) → `{id, url, …}` to use as `attachment_id` |
 | GET | `/attachments/{key}` | Download a sent attachment (see note below) |
 | PUT / DELETE | `/messages/{id}/reaction` | Set or remove your emoji reaction |
+| GET | `/messages/{id}/info` | Message details: per-recipient delivered and read times (the sender sees everyone; others see only themselves) |
 | WS | `/ws?token=` | Real-time events (see below) |
 
 **Attachment downloads** use a random, unguessable key in the URL instead of the bearer token, because `<img>` tags can't send an `Authorization` header (the same idea as an S3 presigned URL). Only JPEG, PNG, GIF and WebP render inline. Everything else, including SVG and HTML, is served as a download with `nosniff` and a sandbox CSP, so an uploaded file can't run scripts on the API's origin.
@@ -254,7 +269,7 @@ backend/
   app/
     main.py              app wiring, CORS, startup seed, purge task
     config.py            environment settings
-    database.py          engine, session, SQLite pragmas
+    database.py          engine and session (SQLite or Postgres)
     models.py            SQLAlchemy schema
     schemas.py           Pydantic request/response models
     security.py          session tokens, current-user dependency
@@ -266,8 +281,9 @@ backend/
       conversations.py   membership and admin rules
       messaging.py       message creation, receipts, event fan-out
       serializers.py     viewer-aware ORM → API conversion (batched queries)
-  tests/                 end-to-end REST + WebSocket tests
+  tests/                 REST + WebSocket tests
 frontend/
+  e2e/                   Playwright browser tests (two users, phone layout)
   src/
     app/                 Next.js entry (layout, theme bootstrap, page)
     lib/
@@ -305,19 +321,24 @@ frontend/
 
 ## Continuous integration
 
-GitHub Actions (`.github/workflows/ci.yml`) runs on every push: the backend test suite (REST and WebSocket flows, attachments, group admin, disappearing messages), and the frontend lint, typecheck and production build.
+GitHub Actions (`.github/workflows/ci.yml`) runs four jobs on every push:
+
+- **Backend tests** on SQLite and again on **Postgres 16**: REST and WebSocket flows, attachments, group admin, disappearing messages and message details.
+- **Frontend** lint, typecheck and production build.
+- **Browser tests**: the Playwright suite against the real backend and a production build. On failure, the HTML report with traces and screenshots is uploaded as a build artifact.
 
 ## Deployment
 
 **Backend → Render** (free web service). The repo includes a `render.yaml` blueprint:
 1. New → Blueprint → select this repo. It builds `backend/` and starts `uvicorn app.main:app`.
 2. Any `*.vercel.app` frontend is already allowed by `CORS_ORIGIN_REGEX`. For a custom domain, add it to `CORS_ORIGINS`.
+3. **Persistent data (recommended):** create a free Postgres database (for example on [Neon](https://neon.tech)), and set its connection string as `DATABASE_URL` on the Render service. On first boot the app creates the tables and seeds the demo data once; after that, messages and accounts survive restarts and redeploys.
 
 **Frontend → Vercel:**
 1. Import the repo and set **Root Directory** to `frontend`.
 2. Add the environment variable `NEXT_PUBLIC_API_URL=https://<your-render-service>.onrender.com`.
 
-Render's free tier sleeps after inactivity, and the first request takes about 50 seconds to wake it. The disk is ephemeral, so the demo data is re-seeded on each restart.
+Render's free tier sleeps after inactivity, and the first request takes about 50 seconds to wake it. Without `DATABASE_URL` the backend falls back to SQLite on Render's ephemeral disk, so the demo data is re-seeded on each restart.
 
 ## Assumptions and mocks
 
@@ -325,8 +346,9 @@ Render's free tier sleeps after inactivity, and the first request takes about 50
 - **End-to-end encryption is simulated:** messages are stored in plain text. The UI shows Signal's encryption notices and a safety-number screen for look and feel only.
 - **Calls, Stories and Linked devices** are "Coming soon" placeholders.
 - **Online / last seen** is real for connected users (based on open sockets); seeded users who never connect show a seeded "last seen" time.
-- **Profile photos and attachments are stored in SQLite** (photos as data URLs up to ~400 KB, attachments as BLOBs up to 5 MB, one per message). This keeps deployment to a single service with no file storage.
-- **Single backend instance:** the WebSocket registry is in memory. On free hosting tiers the SQLite file is ephemeral, so the demo re-seeds itself on every deploy or restart.
+- **Profile photos and attachments are stored in the database** (photos as data URLs up to ~400 KB, attachments as BLOBs up to 5 MB, one per message). This keeps deployment to an API plus a database, with no separate file storage.
+- **Single backend instance:** the WebSocket registry is in memory.
+- **Tables are created on startup** (`create_all`) rather than through migrations, which is enough while the schema only grows with the app.
 - **Disappearing timers start when a message is sent** (Signal starts them when the message is read), which keeps the logic server-side and deterministic.
 
 ## What I'd do next
@@ -335,9 +357,9 @@ This demo deliberately trades scale and real cryptography for simplicity. For pr
 
 - **Real end-to-end encryption.** Use the Signal Protocol: X3DH (or PQXDH) to agree on keys from published prekey bundles, then the Double Ratchet for per-message keys with forward secrecy. The server would only store and relay ciphertext plus prekeys, so read receipts, typing and reactions would also travel as encrypted messages. Groups would use sender keys. The safety-number screen would compare real identity-key fingerprints.
 - **Horizontal scaling.** Replace the in-memory `ConnectionManager` with Redis pub/sub (or NATS) behind the same `send_to_users` interface, so any API instance can reach any user's socket. Sticky sessions are then not required.
-- **Postgres instead of SQLite**, with Alembic migrations, an async driver, and partitioning or archiving for `messages` and `message_receipts`, which grow as messages × recipients.
+- **Database at scale:** Alembic migrations instead of `create_all`, an async driver, and partitioning or archiving for `messages` and `message_receipts`, which grow as messages × recipients.
 - **Object storage for attachments** (S3 or R2) with presigned, expiring upload and download URLs, image thumbnails, and virus scanning, instead of BLOBs in the database.
 - **Delivery when the app is closed:** web push / APNs / FCM for offline users, and multi-device sync with per-device receipts.
 - **Abuse and safety:** rate limits on OTP and sending, real SMS verification, message requests for unknown senders, and blocking and reporting.
-- **More tests:** Playwright end-to-end tests in CI (this project was checked with two-user Playwright runs locally) and load tests for the WebSocket fan-out.
+- **More tests:** load tests for the WebSocket fan-out, and the browser suite on Firefox and WebKit as well as Chromium.
 
